@@ -79,6 +79,34 @@ const getCategoryStyle = (category = '') => {
   return { bg: 'bg-gradient-to-br from-slate-100 to-blue-100', emoji: '🍽️', tag: 'Food' };
 };
 
+// --- Food Image Category Resolver ---
+const getFoodImage = (category, name) => {
+  switch (category) {
+    case 'Soups':
+      return '/categories/soups.png';
+    case 'Veg Starters':
+    case 'Chicken Starters':
+    case 'Mutton & Seafood Starters':
+      return '/categories/starters.png';
+    case 'Tandoor Veg':
+    case 'Tandoor Non-Veg':
+      return '/categories/tandoor.png';
+    case 'Veg Main Course':
+    case 'Chicken Main Course':
+    case 'Mutton Main Course':
+    case 'Seafood Main Course':
+      return '/categories/main_course.png';
+    case 'Breads / Roti':
+      return '/categories/breads.png';
+    case 'Rice & Biryani':
+      return '/categories/biryani.png';
+    case 'Noodles & Fried Rice':
+      return '/categories/noodles.png';
+    default:
+      return '/categories/main_course.png';
+  }
+};
+
 // --- CSV / Excel Export Utility ---
 const exportToCSV = (filename, headers, rows) => {
   const csvContent = [
