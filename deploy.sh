@@ -86,6 +86,7 @@ server {
 }
 NGINX
 
+sudo rm -f /etc/nginx/sites-enabled/default
 sudo ln -sf /etc/nginx/sites-available/petpooja.conf /etc/nginx/sites-enabled/
 sudo systemctl restart nginx
 
