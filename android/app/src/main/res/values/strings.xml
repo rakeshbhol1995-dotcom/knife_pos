@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Urmi Kitchen POS</string>
+    <string name="title_activity_main">Urmi Kitchen POS</string>
+    <string name="package_name">com.urmikitchen.pos</string>
+    <string name="custom_url_scheme">com.urmikitchen.pos</string>
+</resources>
