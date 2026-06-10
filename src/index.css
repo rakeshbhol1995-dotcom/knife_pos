@@ -26,3 +26,88 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* ========================================================================= */
+/* Mobile Responsiveness & Scrolling Overrides for KNIFE POS */
+/* ========================================================================= */
+@media (max-width: 768px) {
+  /* 1. Reset root/body settings to allow window scrolling */
+  body, html, #root {
+    overflow: auto !important;
+    height: auto !important;
+    min-height: 100vh;
+  }
+
+  /* 2. POS Workspace containers */
+  .pos-workspace-root {
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: 100vh;
+    overflow: visible !important;
+  }
+
+  .pos-workspace-main {
+    height: auto !important;
+    min-height: 100vh;
+    overflow: visible !important;
+  }
+
+  .pos-workspace-content {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* 3. Table Map View overrides */
+  .pos-table-view-screen {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* 4. POS Billing Panel screen */
+  .pos-screen-container {
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: calc(100vh - 4rem) !important;
+    overflow: visible !important;
+  }
+
+  .pos-menu-area {
+    height: auto !important;
+    overflow: visible !important;
+    border-right: none !important;
+  }
+
+  .pos-menu-grid-scroll {
+    overflow-y: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  .pos-cart-panel {
+    width: 100% !important;
+    height: calc(100vh - 8rem) !important;
+    position: fixed !important;
+    top: 3.5rem !important;
+    bottom: 4rem !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 40 !important;
+    border-left: none !important;
+  }
+
+  .pos-cart-items-scroll {
+    flex: 1 1 0% !important;
+    overflow-y: auto !important;
+  }
+
+  /* 5. Sub-screens mobile adjustments */
+  .pos-kds-screen, 
+  .pos-menu-manager, 
+  .pos-reports-screen, 
+  .pos-expenses-screen, 
+  .pos-staff-screen {
+    height: auto !important;
+    overflow: visible !important;
+    padding-bottom: 5.5rem !important; /* Spacing for bottom navbar */
+  }
+}

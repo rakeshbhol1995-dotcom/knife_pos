@@ -687,7 +687,7 @@ const TableViewScreen = ({
   };
 
   return (
-    <div className="flex-1 bg-[#f1f5f9] p-6 overflow-y-auto font-sans print:hidden select-none">
+    <div className="pos-table-view-screen flex-1 bg-[#f1f5f9] p-6 overflow-y-auto font-sans print:hidden select-none">
       
       {/* Header Title */}
       <div className="flex items-center justify-between border-b border-slate-300 pb-3 mb-6">
@@ -991,9 +991,9 @@ const POSScreen = ({
   const activeServiceType = currentSession.startsWith('T-') || currentSession.startsWith('O-') ? 'Dine In' : currentSession;
 
   return (
-    <div className="flex flex-col md:flex-row bg-slate-100 w-full h-full overflow-hidden print:hidden font-sans relative pb-16 md:pb-0">
+    <div className="pos-screen-container flex flex-col md:flex-row bg-slate-100 w-full h-full overflow-hidden print:hidden font-sans relative pb-16 md:pb-0">
       {/* Left: Menu Area */}
-      <div className={`flex-1 flex flex-col h-full overflow-hidden border-r border-slate-200 ${mobileView === 'menu' ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`pos-menu-area flex-1 flex flex-col h-full overflow-hidden border-r border-slate-200 ${mobileView === 'menu' ? 'flex' : 'hidden md:flex'}`}>
         
         {/* Navigation Action strip (Petpooja style) */}
         <div className="bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between select-none shadow-xs">
@@ -1060,7 +1060,7 @@ const POSScreen = ({
         </div>
 
         {/* Menu Grid */}
-        <div className="flex-1 overflow-y-auto p-4 content-start">
+        <div className="pos-menu-grid-scroll flex-1 overflow-y-auto p-4 content-start">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredItems.map(item => {
               const isInactive = inactiveItems.includes(item.id);
@@ -1145,7 +1145,7 @@ const POSScreen = ({
       )}
 
       {/* Right: Cart Panel */}
-      <div className={`w-full md:w-[400px] bg-white flex flex-col h-full shadow-2xl border-l border-slate-200 relative z-20 shrink-0 ${mobileView === 'cart' ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`pos-cart-panel w-full md:w-[400px] bg-white flex flex-col h-full shadow-2xl border-l border-slate-200 relative z-20 shrink-0 ${mobileView === 'cart' ? 'flex' : 'hidden md:flex'}`}>
         <div className="p-4 bg-red-50 border-b border-red-150 space-y-2 select-none">
           {/* Mobile Back to Menu */}
           <div className="md:hidden flex items-center pb-1">
@@ -1205,7 +1205,7 @@ const POSScreen = ({
         </div>
 
         {/* Cart Item List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        <div className="pos-cart-items-scroll flex-1 overflow-y-auto p-4 space-y-3">
           {cart.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3 select-none">
               <ShoppingBag className="w-12 h-12 opacity-35 text-[#ef4444]" />
@@ -1302,7 +1302,7 @@ const KDS_Screen = ({ orders, markOrderReady }) => {
   const pendingOrders = orders.filter(o => o.status === 'Pending');
   
   return (
-    <div className="p-6 bg-slate-50 h-full overflow-y-auto font-sans print:hidden">
+    <div className="pos-kds-screen p-6 bg-slate-50 h-full overflow-y-auto font-sans print:hidden">
       <div className="flex items-center justify-between mb-6 border-b border-slate-200 pb-3">
         <h2 className="text-2xl font-black text-slate-850 flex items-center gap-2">
           <ChefHat className="text-[#ef4444] w-7 h-7" /> Kitchen Display System
@@ -1376,7 +1376,7 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
   };
 
   return (
-    <div className="flex h-full bg-slate-50 print:hidden font-sans select-none">
+    <div className="pos-menu-manager flex h-full bg-slate-50 print:hidden font-sans select-none">
       <div className="flex-1 p-8 overflow-y-auto">
         <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-200 pb-3">
           <UtensilsCrossed className="text-[#ef4444] w-7 h-7" /> Menu Management
@@ -1596,7 +1596,7 @@ const ReportsScreen = ({ orders, expenses, onPrintReport }) => {
   };
 
   return (
-    <div className="p-8 bg-slate-50 h-full overflow-y-auto font-sans print:hidden">
+    <div className="pos-reports-screen p-8 bg-slate-50 h-full overflow-y-auto font-sans print:hidden">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2 border-b border-slate-200 pb-3 w-full">
           <FileText className="text-[#ef4444] w-7 h-7" /> Business Reports & Analytics
@@ -1867,7 +1867,7 @@ const ExpensesScreen = ({ expenses, orders, addExpense, deleteExpense }) => {
   const categories = ['Raw Materials', 'Rent', 'Salaries', 'Utilities', 'Taxes', 'Maintenance', 'Other'];
 
   return (
-    <div className="p-8 bg-slate-50 h-full overflow-y-auto font-sans print:hidden relative select-none">
+    <div className="pos-expenses-screen p-8 bg-slate-50 h-full overflow-y-auto font-sans print:hidden relative select-none">
       <div className="flex items-center justify-between mb-6 border-b border-slate-200 pb-3">
         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
           <IndianRupee className="text-rose-500 w-7 h-7" /> Expense Register & Ledger
@@ -2172,7 +2172,7 @@ const StaffScreen = ({ staff, addStaff, removeStaff, attendance, saveAttendance,
   };
 
   return (
-    <div className="p-8 bg-slate-50 h-full overflow-y-auto font-sans print:hidden select-none">
+    <div className="pos-staff-screen p-8 bg-slate-50 h-full overflow-y-auto font-sans print:hidden select-none">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-3 w-full">
         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
           <Users className="text-[#ef4444] w-7 h-7" /> Staff Salary & Attendance
@@ -4011,10 +4011,10 @@ function POSWorkspace({ restaurant, onExit, user }) {
   };
 
   return (
-    <div className="flex w-full h-screen bg-[#f1f5f9] font-sans text-slate-900 overflow-hidden selection:bg-rose-100 selection:text-rose-900">
+    <div className="pos-workspace-root flex w-full h-screen bg-[#f1f5f9] font-sans text-slate-900 overflow-hidden selection:bg-rose-100 selection:text-rose-900">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <main className="flex-1 h-full overflow-hidden relative flex flex-col">
+      <main className="pos-workspace-main flex-1 h-full overflow-hidden relative flex flex-col">
         {/* Authentic top gray strip and white toolbar bar */}
         <TopBrandBar 
           activeTab={activeTab}
@@ -4030,7 +4030,7 @@ function POSWorkspace({ restaurant, onExit, user }) {
           onExit={onExit}
         />
         
-        <div className="flex-1 overflow-hidden relative">
+        <div className="pos-workspace-content flex-1 overflow-hidden relative">
           {activeTab === 'pos' && (
             selectedTable === null ? (
               <TableViewScreen 
