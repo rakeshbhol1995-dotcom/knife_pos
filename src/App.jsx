@@ -2902,7 +2902,7 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
                             <div className="text-[10px] text-slate-550 font-extrabold uppercase font-mono leading-tight">
                               Paid: <span className="text-emerald-600">₹{payroll.savedAmountPaid.toLocaleString()}</span>
                               {payroll.savedBalancePending > 0 && (
-                                <> | Baki: <span className="text-rose-500">₹{payroll.savedBalancePending.toLocaleString()}</span></>
+                                <> | Pending: <span className="text-rose-500">₹{payroll.savedBalancePending.toLocaleString()}</span></>
                               )}
                             </div>
                             <div className="text-[8px] text-slate-400 font-bold uppercase">
@@ -3137,7 +3137,7 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
               </div>
 
               <div className="text-left">
-                <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Net Payable (dia haba) (₹)</label>
+                <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Net Payable (₹)</label>
                 <input
                   type="number"
                   required
@@ -3156,7 +3156,7 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
               </div>
 
               <div className="text-left">
-                <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Amount Paid (deicha) (₹)</label>
+                <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Amount Paid (₹)</label>
                 <input
                   type="number"
                   required
@@ -3175,7 +3175,7 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
               </div>
 
               <div className="flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-xs font-bold text-slate-605">Balance Pending (baki) (₹):</span>
+                <span className="text-xs font-bold text-slate-605">Pending Balance (₹):</span>
                 <span className={`font-mono text-sm font-black ${paymentForm.balancePending > 0 ? 'text-rose-600 animate-pulse' : 'text-emerald-600'}`}>
                   ₹{Number(paymentForm.balancePending || 0).toLocaleString()}
                 </span>
