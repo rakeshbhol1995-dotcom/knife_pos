@@ -1604,7 +1604,28 @@ const DEFAULT_CATEGORIES = [
   'Rice & Biryani', 'Noodles & Fried Rice', 'Desserts', 'Cold Drinks & Beverages'
 ];
 
-const MenuManager = ({ menuItems, addMenuItem }) => {
+const loadScript = (src, globalVarName) => {
+  return new Promise((resolve, reject) => {
+    if (window[globalVarName]) {
+      resolve(window[globalVarName]);
+      return;
+    }
+    const existing = document.querySelector(`script[src="${src}"]`);
+    if (existing) {
+      existing.addEventListener('load', () => resolve(window[globalVarName]));
+      existing.addEventListener('error', (err) => reject(err));
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve(window[globalVarName]);
+    script.onerror = (err) => reject(err);
+    document.body.appendChild(script);
+  });
+};
+
+const MenuManager = ({ menuItems, addMenuItem, addMenuItemBatch }) => {
   const [newItem, setNewItem] = useState({ name: '', price: '', category: 'Soups', type: 'Veg' });
   const [customCategories, setCustomCategories] = useState(() => {
     try { return JSON.parse(localStorage.getItem('knife_pos_custom_categories') || '[]'); } catch { return []; }
@@ -1612,6 +1633,297 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
   const [showAddCat, setShowAddCat] = useState(false);
   const [newCatName, setNewCatName] = useState('');
   const allCategories = [...DEFAULT_CATEGORIES, ...customCategories];
+
+  // Import Wizard states
+  const [showImportWizard, setShowImportWizard] = useState(false);
+  const [isLoadingScripts, setIsLoadingScripts] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const [parsedItems, setParsedItems] = useState([]);
+  const [importError, setImportError] = useState(null);
+
+  const initScripts = async () => {
+    setIsLoadingScripts(true);
+    setImportError(null);
+    try {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', 'XLSX');
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js', 'pdfjsLib');
+      if (window.pdfjsLib) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+      }
+    } catch (err) {
+      console.error("Failed to load libraries:", err);
+      setImportError("Failed to load PDF/Excel libraries. Please check your internet connection.");
+    } finally {
+      setIsLoadingScripts(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showImportWizard) {
+      initScripts();
+    }
+  }, [showImportWizard]);
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsParsing(true);
+    setImportError(null);
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'pdf') {
+      try {
+        await parsePDF(file);
+      } catch (err) {
+        setImportError(err.message || "Failed to parse PDF file.");
+      } finally {
+        setIsParsing(false);
+      }
+    } else if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+      try {
+        await parseExcelOrCSV(file);
+      } catch (err) {
+        setImportError(err.message || "Failed to parse Excel/CSV file.");
+      } finally {
+        setIsParsing(false);
+      }
+    } else {
+      setImportError("Unsupported file type. Please upload Excel (.xlsx/.xls), CSV (.csv) or PDF (.pdf) file.");
+      setIsParsing(false);
+    }
+  };
+
+  const parseExcelOrCSV = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          if (!window.XLSX) {
+            reject(new Error("Excel library not loaded."));
+            return;
+          }
+          const workbook = window.XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonData = window.XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          
+          if (jsonData.length === 0) {
+            reject(new Error("The uploaded file is empty."));
+            return;
+          }
+
+          let headerRowIdx = 0;
+          for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+            const row = jsonData[i] || [];
+            if (row.some(cell => typeof cell === 'string' && (cell.toLowerCase().includes('name') || cell.toLowerCase().includes('item')))) {
+              headerRowIdx = i;
+              break;
+            }
+          }
+
+          const headers = (jsonData[headerRowIdx] || []).map(h => String(h || '').trim().toLowerCase());
+          const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('item') || h.includes('title')) !== -1 ? headers.findIndex(h => h.includes('name') || h.includes('item') || h.includes('title')) : 0;
+          const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('cost')) !== -1 ? headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('cost')) : 1;
+          const catIdx = headers.findIndex(h => h.includes('category') || h.includes('cat') || h.includes('group')) !== -1 ? headers.findIndex(h => h.includes('category') || h.includes('cat') || h.includes('group')) : 2;
+          const typeIdx = headers.findIndex(h => h.includes('veg') || h.includes('non') || h.includes('diet') || h.includes('type')) !== -1 ? headers.findIndex(h => h.includes('veg') || h.includes('non') || h.includes('diet') || h.includes('type')) : -1;
+
+          const items = [];
+          for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (!row || row.length === 0 || !row[nameIdx]) continue;
+
+            const name = String(row[nameIdx]).trim();
+            const price = parseFloat(row[priceIdx]) || 0;
+            let category = row[catIdx] ? String(row[catIdx]).trim() : 'Other';
+            
+            let type = 'Veg';
+            if (typeIdx !== -1 && row[typeIdx]) {
+              const val = String(row[typeIdx]).toLowerCase();
+              if (val.includes('non') || val.includes('egg') || val.includes('chicken') || val.includes('fish') || val.includes('mutton') || val.includes('nv') || val.includes('red')) {
+                type = 'Non-Veg';
+              }
+            } else {
+              const nameLower = name.toLowerCase();
+              if (nameLower.includes('chicken') || nameLower.includes('mutton') || nameLower.includes('fish') || nameLower.includes('egg') || nameLower.includes('prawn') || nameLower.includes('crab') || nameLower.includes('paya') || nameLower.includes('meat') || nameLower.includes('non-veg') || nameLower.includes('non veg')) {
+                type = 'Non-Veg';
+              }
+            }
+
+            items.push({ name, price, category, type });
+          }
+
+          setParsedItems(items);
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const parsePDF = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const arrayBuffer = e.target.result;
+          if (!window.pdfjsLib) {
+            reject(new Error("PDF parsing library not loaded."));
+            return;
+          }
+          const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+          let textContent = "";
+
+          for (let pIdx = 1; pIdx <= pdf.numPages; pIdx++) {
+            const page = await pdf.getPage(pIdx);
+            const text = await page.getTextContent();
+            const items = text.items;
+            items.sort((a, b) => {
+              if (Math.abs(a.transform[5] - b.transform[5]) < 5) {
+                return a.transform[4] - b.transform[4];
+              }
+              return b.transform[5] - a.transform[5];
+            });
+
+            let lastY = null;
+            let pageText = "";
+            for (let item of items) {
+              if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
+                pageText += "\n";
+              }
+              pageText += item.str + " ";
+              lastY = item.transform[5];
+            }
+            textContent += pageText + "\n";
+          }
+
+          const lines = textContent.split('\n').map(line => line.trim()).filter(Boolean);
+          const items = [];
+          let currentCategory = 'Other';
+
+          for (let line of lines) {
+            const cleanLine = line.trim();
+            const hasDigits = /\d/.test(cleanLine);
+            
+            if (!hasDigits && cleanLine.length > 3 && cleanLine.length < 50) {
+              const lowerLine = cleanLine.toLowerCase();
+              if (
+                lowerLine.includes('soup') || 
+                lowerLine.includes('starter') || 
+                lowerLine.includes('tandoor') || 
+                lowerLine.includes('main') || 
+                lowerLine.includes('course') || 
+                lowerLine.includes('bread') || 
+                lowerLine.includes('roti') || 
+                lowerLine.includes('rice') || 
+                lowerLine.includes('biryani') || 
+                lowerLine.includes('noodle') || 
+                lowerLine.includes('dessert') || 
+                lowerLine.includes('drink') || 
+                lowerLine.includes('beverage') ||
+                lowerLine.includes('salad') ||
+                cleanLine === cleanLine.toUpperCase()
+              ) {
+                currentCategory = cleanLine.replace(/[:\-]/g, '').trim();
+                continue;
+              }
+            }
+
+            const priceRegex = /(?:rs\.?|₹|inr)?\s*(\d+(?:\.\d{1,2})?)\s*$/i;
+            const match = cleanLine.match(priceRegex);
+            if (match) {
+              const priceVal = parseFloat(match[1]);
+              let itemName = cleanLine.substring(0, match.index).trim();
+              itemName = itemName.replace(/[\.\-\s_]+$/, '').trim();
+
+              if (itemName && itemName.length > 2 && itemName.length < 100 && priceVal > 0) {
+                let type = 'Veg';
+                const nameLower = itemName.toLowerCase();
+                if (
+                  nameLower.includes('chicken') || 
+                  nameLower.includes('mutton') || 
+                  nameLower.includes('fish') || 
+                  nameLower.includes('egg') || 
+                  nameLower.includes('prawn') || 
+                  nameLower.includes('crab') || 
+                  nameLower.includes('paya') || 
+                  nameLower.includes('meat') || 
+                  nameLower.includes('non-veg') || 
+                  nameLower.includes('non veg') ||
+                  currentCategory.toLowerCase().includes('non-veg') ||
+                  currentCategory.toLowerCase().includes('non veg') ||
+                  currentCategory.toLowerCase().includes('chicken') ||
+                  currentCategory.toLowerCase().includes('mutton') ||
+                  currentCategory.toLowerCase().includes('seafood')
+                ) {
+                  type = 'Non-Veg';
+                }
+
+                items.push({
+                  name: itemName,
+                  price: priceVal,
+                  category: currentCategory,
+                  type: type
+                });
+              }
+            }
+          }
+
+          if (items.length === 0) {
+            reject(new Error("No menu items with prices could be identified in this PDF."));
+            return;
+          }
+
+          setParsedItems(items);
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      };
+      reader.onerror = (err) => reject(err);
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const updateParsedItem = (idx, field, value) => {
+    setParsedItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: value } : item));
+  };
+
+  const deleteParsedItem = (idx) => {
+    setParsedItems(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleConfirmImport = () => {
+    if (parsedItems.length === 0) return;
+
+    // Detect new custom categories
+    const newCats = [];
+    parsedItems.forEach(item => {
+      const trimmedCat = item.category.trim();
+      if (trimmedCat && !allCategories.includes(trimmedCat) && !newCats.includes(trimmedCat)) {
+        newCats.push(trimmedCat);
+      }
+    });
+
+    if (newCats.length > 0) {
+      const updated = [...customCategories, ...newCats];
+      setCustomCategories(updated);
+      localStorage.setItem('knife_pos_custom_categories', JSON.stringify(updated));
+    }
+
+    if (addMenuItemBatch) {
+      addMenuItemBatch(parsedItems.map(item => ({
+        ...item,
+        id: Date.now() + Math.random()
+      })));
+    }
+
+    setParsedItems([]);
+    setShowImportWizard(false);
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1638,11 +1950,19 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
   const catStyle = getCategoryStyle(newItem.category);
 
   return (
-    <div className="pos-menu-manager flex h-full bg-slate-50 print:hidden font-sans select-none">
+    <div className="pos-menu-manager flex h-full bg-slate-50 print:hidden font-sans select-none w-full">
       <div className="flex-1 p-8 overflow-y-auto">
-        <h2 className="text-2xl font-black text-slate-800 mb-6 flex items-center gap-2 border-b border-slate-200 pb-3">
-          <UtensilsCrossed className="text-[#ef4444] w-7 h-7" /> Menu Management
-        </h2>
+        <div className="flex items-center justify-between mb-6 border-b border-slate-200 pb-3">
+          <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+            <UtensilsCrossed className="text-[#ef4444] w-7 h-7" /> Menu Management
+          </h2>
+          <button
+            onClick={() => setShowImportWizard(true)}
+            className="bg-slate-900 hover:bg-slate-850 text-white font-extrabold px-4 py-2.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm active:scale-95"
+          >
+            📥 Import Menu
+          </button>
+        </div>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-w-2xl">
           <h3 className="text-base font-extrabold mb-4 text-slate-700 uppercase tracking-wider flex items-center gap-2">
@@ -1655,7 +1975,7 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Item Name *</label>
                 <input
                   required
-                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold text-sm"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-355 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold text-sm"
                   value={newItem.name}
                   onChange={e => setNewItem({ ...newItem, name: e.target.value })}
                   placeholder="e.g. Kadai Paneer"
@@ -1666,7 +1986,7 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
                 <input
                   type="number"
                   required
-                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-black font-mono text-sm"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-355 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-black font-mono text-sm"
                   value={newItem.price}
                   onChange={e => setNewItem({ ...newItem, price: e.target.value })}
                   placeholder="0"
@@ -1683,14 +2003,14 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
                   </button>
                 </div>
                 <select
-                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-semibold cursor-pointer text-sm"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-355 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-semibold cursor-pointer text-sm"
                   value={newItem.category}
                   onChange={e => setNewItem({ ...newItem, category: e.target.value })}
                 >
                   {allCategories.map(cat => <option key={cat}>{cat}</option>)}
                 </select>
                 {showAddCat && (
-                  <form onSubmit={handleAddCategory} className="mt-2 flex gap-2">
+                  <div className="mt-2 flex gap-2">
                     <input
                       autoFocus
                       value={newCatName}
@@ -1698,9 +2018,9 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
                       placeholder="e.g. Special Thali"
                       className="flex-1 p-2 text-xs border border-rose-300 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 font-bold"
                     />
-                    <button type="submit" className="bg-rose-600 text-white px-3 py-2 rounded-lg text-xs font-black cursor-pointer">Add</button>
+                    <button type="button" onClick={handleAddCategory} className="bg-rose-600 text-white px-3 py-2 rounded-lg text-xs font-black cursor-pointer">Add</button>
                     <button type="button" onClick={() => setShowAddCat(false)} className="bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-black cursor-pointer">✕</button>
-                  </form>
+                  </div>
                 )}
               </div>
               <div>
@@ -1724,7 +2044,7 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
               <span className="text-xs font-black text-slate-700 uppercase tracking-wide">{newItem.category} — {newItem.type}</span>
             </div>
 
-            <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 rounded-lg transition-colors flex justify-center items-center gap-2 mt-2 uppercase tracking-wider text-xs cursor-pointer shadow-sm">
+            <button type="submit" className="w-full bg-slate-900 hover:bg-slate-850 text-white font-extrabold py-3 rounded-lg transition-colors flex justify-center items-center gap-2 mt-2 uppercase tracking-wider text-xs cursor-pointer shadow-sm">
               <Plus className="w-4 h-4 text-rose-400" /> Add Item to Menu
             </button>
           </form>
@@ -1754,9 +2074,8 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
 
         <div className="mt-8">
           <h3 className="text-base font-extrabold mb-4 text-slate-700 uppercase tracking-wider">Current Menu Items ({menuItems.length})</h3>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-
-            <table className="w-full text-left border-collapse">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden overflow-x-auto">
+            <table className="w-full text-left border-collapse min-w-[600px]">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
                   <th className="p-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Item Details</th>
@@ -1769,7 +2088,7 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
                 {menuItems.map(item => (
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                     <td className="p-4 flex items-center gap-3">
-                      <img src={item.image} className="w-10 h-10 rounded object-cover shadow-xs border border-slate-200" />
+                      <img src={item.image || getFoodImage(item.category, item.name)} className="w-10 h-10 rounded object-cover shadow-xs border border-slate-200" />
                       <span className="font-extrabold text-slate-800 text-sm">{item.name}</span>
                     </td>
                     <td className="p-4 text-xs font-extrabold text-slate-400 uppercase tracking-wide">{item.category}</td>
@@ -1787,6 +2106,161 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
           </div>
         </div>
       </div>
+
+      {showImportWizard && createPortal(
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs select-none font-sans">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col overflow-hidden text-left font-sans text-slate-100 max-h-[90vh]">
+            <div className="p-5 bg-slate-950 text-white flex justify-between items-center border-b border-slate-850">
+              <h3 className="font-extrabold text-sm uppercase tracking-wider flex items-center gap-2 text-rose-500">
+                <UtensilsCrossed className="w-5 h-5" /> Bulk Import Menu Items
+              </h3>
+              <button 
+                onClick={() => { setShowImportWizard(false); setParsedItems([]); setImportError(null); }} 
+                className="hover:text-rose-455 p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 cursor-pointer transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-955/20">
+              {importError && (
+                <div className="bg-rose-500/10 border border-rose-500/20 text-rose-450 p-4 rounded-xl text-xs font-semibold flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{importError}</span>
+                </div>
+              )}
+
+              {/* Upload Dropzone */}
+              {parsedItems.length === 0 && (
+                <div className="border-2 border-dashed border-slate-800 hover:border-rose-550/40 rounded-2xl p-10 text-center bg-slate-950/40 transition-all cursor-pointer relative group">
+                  <input 
+                    type="file" 
+                    accept=".csv, .xlsx, .xls, .pdf" 
+                    onChange={handleFileSelect} 
+                    className="absolute inset-0 opacity-0 cursor-pointer" 
+                    disabled={isLoadingScripts || isParsing}
+                  />
+                  <div className="flex flex-col items-center justify-center">
+                    <FileText className="w-12 h-12 text-slate-500 group-hover:text-rose-500 transition-colors mb-3" />
+                    <p className="font-extrabold text-sm text-slate-300 group-hover:text-white transition-colors mb-1">
+                      {isParsing ? "Extracting menu items..." : isLoadingScripts ? "Loading libraries..." : "Upload Menu File"}
+                    </p>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Supports Excel (.xlsx, .xls), CSV (.csv) or PDF (.pdf)
+                    </p>
+                    <p className="text-[10px] text-slate-650 font-bold uppercase tracking-wider mt-4">
+                      Menu item names, prices, categories & types are auto-detected
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Parsed List Preview */}
+              {parsedItems.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-wider text-slate-400">Detected Items Preview ({parsedItems.length})</span>
+                    <button 
+                      onClick={() => setParsedItems([])} 
+                      className="text-xs font-black text-rose-500 hover:text-rose-400 uppercase tracking-wider cursor-pointer"
+                    >
+                      Clear & Re-upload
+                    </button>
+                  </div>
+
+                  <div className="border border-slate-800 rounded-2xl overflow-hidden max-h-[40vh] overflow-y-auto bg-slate-955/50">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-950 border-b border-slate-850 text-slate-400 font-extrabold uppercase tracking-wide sticky top-0 z-10">
+                        <tr>
+                          <th className="p-3 w-1/3">Item Name</th>
+                          <th className="p-3 w-1/4">Category</th>
+                          <th className="p-3 w-24 text-right">Price</th>
+                          <th className="p-3 w-28">Type</th>
+                          <th className="p-3 text-center">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850 text-slate-300 font-semibold">
+                        {parsedItems.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-900/40">
+                            <td className="p-3">
+                              <input 
+                                type="text" 
+                                value={item.name} 
+                                onChange={(e) => updateParsedItem(idx, 'name', e.target.value)} 
+                                className="bg-slate-850 border border-slate-800 focus:border-rose-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none w-full font-bold"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <input 
+                                list="import-categories-list" 
+                                value={item.category} 
+                                onChange={(e) => updateParsedItem(idx, 'category', e.target.value)} 
+                                className="bg-slate-855 border border-slate-800 focus:border-rose-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none w-full font-bold"
+                              />
+                            </td>
+                            <td className="p-3 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <span className="text-slate-500">₹</span>
+                                <input 
+                                  type="number" 
+                                  value={item.price} 
+                                  onChange={(e) => updateParsedItem(idx, 'price', parseFloat(e.target.value) || 0)} 
+                                  className="bg-slate-850 border border-slate-800 focus:border-rose-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 font-mono font-black outline-none w-20 text-right"
+                                />
+                              </div>
+                            </td>
+                            <td className="p-3">
+                              <select 
+                                value={item.type} 
+                                onChange={(e) => updateParsedItem(idx, 'type', e.target.value)} 
+                                className="bg-slate-850 border border-slate-800 focus:border-rose-500 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 outline-none w-full font-bold cursor-pointer"
+                              >
+                                <option value="Veg">Veg 🟢</option>
+                                <option value="Non-Veg">Non-Veg 🔴</option>
+                              </select>
+                            </td>
+                            <td className="p-3 text-center">
+                              <button 
+                                onClick={() => deleteParsedItem(idx)} 
+                                className="p-1.5 text-slate-500 hover:text-rose-500 rounded-lg hover:bg-slate-850 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <datalist id="import-categories-list">
+                    {allCategories.map(cat => <option key={cat} value={cat} />)}
+                  </datalist>
+                </div>
+              )}
+            </div>
+
+            <div className="p-5 bg-slate-955 border-t border-slate-850 flex justify-end gap-3">
+              <button 
+                type="button" 
+                onClick={() => { setShowImportWizard(false); setParsedItems([]); setImportError(null); }} 
+                className="bg-slate-800 hover:bg-slate-750 text-slate-350 hover:text-white font-extrabold px-5 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={handleConfirmImport}
+                disabled={parsedItems.length === 0}
+                className="bg-rose-600 hover:bg-rose-550 disabled:bg-slate-800 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed active:scale-95 flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" /> Confirm & Import
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
@@ -2305,43 +2779,45 @@ const ExpensesScreen = ({ expenses, orders, addExpense, deleteExpense }) => {
             Total Filtered: ₹{totalFilteredExpenseAmount.toLocaleString()}
           </span>
         </div>
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-            <tr>
-              <th className="p-4">Date</th>
-              <th className="p-4">ID</th>
-              <th className="p-4">Title</th>
-              <th className="p-4">Category</th>
-              <th className="p-4 text-right">Amount</th>
-              <th className="p-4">Notes</th>
-              <th className="p-4 text-center">Action</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 text-xs text-slate-750 font-bold">
-            {filteredExpenses.slice().reverse().map(exp => (
-              <tr key={exp.id} className="hover:bg-slate-50 transition-colors">
-                <td className="p-4 font-bold font-mono">{exp.date}</td>
-                <td className="p-4 font-extrabold text-slate-400 font-mono">{exp.id}</td>
-                <td className="p-4 font-black text-slate-850 text-sm">{exp.title}</td>
-                <td className="p-4">
-                  <span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-bold text-slate-650 border border-slate-200">
-                    {exp.category}
-                  </span>
-                </td>
-                <td className="p-4 text-right font-black text-rose-600 text-sm font-mono font-mono">₹{exp.amount.toLocaleString()}</td>
-                <td className="p-4 font-semibold text-slate-500 max-w-[200px] truncate" title={exp.notes}>{exp.notes || '—'}</td>
-                <td className="p-4 text-center">
-                  <button
-                    onClick={() => deleteExpense(exp.id)}
-                    className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
-                  >
-                    <Trash2 className="w-4.5 h-4.5" />
-                  </button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <tr>
+                <th className="p-4">Date</th>
+                <th className="p-4">ID</th>
+                <th className="p-4">Title</th>
+                <th className="p-4">Category</th>
+                <th className="p-4 text-right">Amount</th>
+                <th className="p-4">Notes</th>
+                <th className="p-4 text-center">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100 text-xs text-slate-750 font-bold">
+              {filteredExpenses.slice().reverse().map(exp => (
+                <tr key={exp.id} className="hover:bg-slate-50 transition-colors">
+                  <td className="p-4 font-bold font-mono">{exp.date}</td>
+                  <td className="p-4 font-extrabold text-slate-400 font-mono">{exp.id}</td>
+                  <td className="p-4 font-black text-slate-850 text-sm">{exp.title}</td>
+                  <td className="p-4">
+                    <span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-bold text-slate-650 border border-slate-200">
+                      {exp.category}
+                    </span>
+                  </td>
+                  <td className="p-4 text-right font-black text-rose-600 text-sm font-mono">₹{exp.amount.toLocaleString()}</td>
+                  <td className="p-4 font-semibold text-slate-500 max-w-[200px] truncate" title={exp.notes}>{exp.notes || '—'}</td>
+                  <td className="p-4 text-center">
+                    <button
+                      onClick={() => deleteExpense(exp.id)}
+                      className="p-1 text-slate-400 hover:text-rose-600 cursor-pointer"
+                    >
+                      <Trash2 className="w-4.5 h-4.5" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {showModal && (
@@ -2426,7 +2902,7 @@ const ExpensesScreen = ({ expenses, orders, addExpense, deleteExpense }) => {
 };
 
 // --- Staff Screen Component ---
-const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, saveAttendance, addExpense, deleteExpense, getStorageKey }) => {
+const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, saveAttendance, addExpense, deleteExpense, getStorageKey, restaurantId }) => {
   const [subTab, setSubTab] = useState('list');
   const [showModal, setShowModal] = useState(false);
   const [staffForm, setStaffForm] = useState({ name: '', role: 'Kitchen Helper', salary: '', contact: '', joined: new Date().toISOString().split('T')[0] });
@@ -2441,6 +2917,33 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
     const saved = localStorage.getItem(getStorageKey ? getStorageKey('paid_salaries') : 'urmikitchen_paid_salaries');
     return saved ? JSON.parse(saved) : {};
   });
+
+  useEffect(() => {
+    if (!restaurantId) return;
+    const fetchSalaries = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/salaries/${restaurantId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const salariesObj = {};
+          data.forEach(item => {
+            salariesObj[item.paidKey] = {
+              netPayable: item.netPayable,
+              amountPaid: item.amountPaid,
+              balancePending: item.balancePending,
+              mode: item.mode,
+              date: item.date,
+              notes: item.notes
+            };
+          });
+          setPaidSalaries(prev => ({ ...prev, ...salariesObj }));
+        }
+      } catch (err) {
+        console.error("Error fetching salaries:", err);
+      }
+    };
+    fetchSalaries();
+  }, [restaurantId]);
 
   useEffect(() => {
     localStorage.setItem(getStorageKey ? getStorageKey('paid_salaries') : 'urmikitchen_paid_salaries', JSON.stringify(paidSalaries));
@@ -2551,29 +3054,58 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
       await deleteExpense(expId, true);
     }
     
-    setPaidSalaries(prev => ({
-      ...prev,
-      [paidKey]: {
-        netPayable: Number(paymentForm.netPayable),
-        amountPaid: Number(paymentForm.amountPaid),
-        balancePending: Number(paymentForm.balancePending),
-        mode: paymentForm.mode,
-        date: paymentForm.date,
-        notes: paymentForm.notes
-      }
-    }));
-
-    addExpense({
-      id: expId,
-      title: `Salary Payout - ${paymentForm.memberName} (${payrollMonth})`,
-      amount: Number(paymentForm.amountPaid),
-      category: 'Salaries',
+    const paymentData = {
+      restaurantId,
+      paidKey,
+      memberId: paymentForm.memberId,
+      memberName: paymentForm.memberName,
+      payrollMonth,
+      netPayable: Number(paymentForm.netPayable),
+      amountPaid: Number(paymentForm.amountPaid),
+      balancePending: Number(paymentForm.balancePending),
+      mode: paymentForm.mode,
       date: paymentForm.date,
-      notes: `Net Payable: ₹${paymentForm.netPayable.toLocaleString()}, Paid: ₹${paymentForm.amountPaid.toLocaleString()}, Pending: ₹${paymentForm.balancePending.toLocaleString()}. Mode: ${paymentForm.mode}. ${paymentForm.notes}`
-    });
+      notes: paymentForm.notes
+    };
 
-    setShowPaymentModal(false);
-    alert("Salary payment details saved successfully!");
+    try {
+      const response = await fetch(`${API_BASE}/api/salaries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paymentData)
+      });
+      if (response.ok) {
+        setPaidSalaries(prev => ({
+          ...prev,
+          [paidKey]: {
+            netPayable: Number(paymentForm.netPayable),
+            amountPaid: Number(paymentForm.amountPaid),
+            balancePending: Number(paymentForm.balancePending),
+            mode: paymentForm.mode,
+            date: paymentForm.date,
+            notes: paymentForm.notes
+          }
+        }));
+
+        addExpense({
+          id: expId,
+          title: `Salary Payout - ${paymentForm.memberName} (${payrollMonth})`,
+          amount: Number(paymentForm.amountPaid),
+          category: 'Salaries',
+          date: paymentForm.date,
+          notes: `Net Payable: ₹${paymentForm.netPayable.toLocaleString()}, Paid: ₹${paymentForm.amountPaid.toLocaleString()}, Pending: ₹${paymentForm.balancePending.toLocaleString()}. Mode: ${paymentForm.mode}. ${paymentForm.notes}`
+        });
+
+        setShowPaymentModal(false);
+        alert("Salary payment details saved successfully!");
+      } else {
+        const errText = await response.text();
+        alert(`Failed to save salary to database: ${errText}`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error saving salary payment to database!");
+    }
   };
 
   const calculatePayroll = (employee) => {
@@ -2842,83 +3374,85 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
                 📥 Export Excel
               </button>
             </div>
-            <table className="w-full text-left border-collapse text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                <tr>
-                  <th className="p-4">Name / Role</th>
-                  <th className="p-4 text-center">P / A / H / L</th>
-                  <th className="p-4 text-right">Base Salary</th>
-                  <th className="p-4 text-right">Deductions</th>
-                  <th className="p-4 text-right">Net Payable</th>
-                  <th className="p-4 text-center">Status</th>
-                  <th className="p-4 text-center">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-750 font-bold">
-                {staff.map(member => {
-                  const payroll = calculatePayroll(member);
-                  const hasPartial = payroll.isPaid && payroll.savedBalancePending > 0;
-                  const hasPaid = payroll.isPaid && payroll.savedBalancePending <= 0;
-                  return (
-                    <tr key={member.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 font-black text-slate-900">
-                        <div>{member.name}</div>
-                        <div className="text-[10px] text-slate-400 font-normal">{member.role}</div>
-                      </td>
-                      <td className="p-4 text-center font-mono font-black">
-                        <span className="text-emerald-650">{payroll.present}</span> / <span className="text-rose-650">{payroll.absent}</span> / <span className="text-amber-500">{payroll.half}</span> / <span className="text-blue-500">{payroll.leave}</span>
-                      </td>
-                      <td className="p-4 text-right font-mono font-black text-slate-800">₹{member.salary.toLocaleString()}</td>
-                      <td className="p-4 text-right font-mono font-black text-rose-500">
-                        {payroll.deductions > 0 ? `-₹${payroll.deductions.toLocaleString()}` : '₹0'}
-                      </td>
-                      <td className="p-4 text-right font-mono font-black text-slate-955 text-sm">₹{payroll.savedNetPayable.toLocaleString()}</td>
-                      <td className="p-4 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                          hasPaid
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-250'
-                            : hasPartial
-                              ? 'bg-blue-50 text-blue-705 border border-blue-200'
-                              : 'bg-amber-50 text-amber-700 border border-amber-250'
-                        }`}>
-                          {hasPaid ? 'Paid' : hasPartial ? 'Partial' : 'Pending'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-center">
-                        {payroll.isPaid ? (
-                          <div className="flex flex-col items-center gap-1">
-                            <div className="text-[10px] text-slate-550 font-extrabold uppercase font-mono leading-tight">
-                              Paid: <span className="text-emerald-600">₹{payroll.savedAmountPaid.toLocaleString()}</span>
-                              {payroll.savedBalancePending > 0 && (
-                                <> | Pending: <span className="text-rose-500">₹{payroll.savedBalancePending.toLocaleString()}</span></>
-                              )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs min-w-[800px]">
+                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  <tr>
+                    <th className="p-4">Name / Role</th>
+                    <th className="p-4 text-center">P / A / H / L</th>
+                    <th className="p-4 text-right">Base Salary</th>
+                    <th className="p-4 text-right">Deductions</th>
+                    <th className="p-4 text-right">Net Payable</th>
+                    <th className="p-4 text-center">Status</th>
+                    <th className="p-4 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-755 font-bold">
+                  {staff.map(member => {
+                    const payroll = calculatePayroll(member);
+                    const hasPartial = payroll.isPaid && payroll.savedBalancePending > 0;
+                    const hasPaid = payroll.isPaid && payroll.savedBalancePending <= 0;
+                    return (
+                      <tr key={member.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="p-4 font-black text-slate-900">
+                          <div>{member.name}</div>
+                          <div className="text-[10px] text-slate-400 font-normal">{member.role}</div>
+                        </td>
+                        <td className="p-4 text-center font-mono font-black">
+                          <span className="text-emerald-650">{payroll.present}</span> / <span className="text-rose-650">{payroll.absent}</span> / <span className="text-amber-500">{payroll.half}</span> / <span className="text-blue-500">{payroll.leave}</span>
+                        </td>
+                        <td className="p-4 text-right font-mono font-black text-slate-800">₹{member.salary.toLocaleString()}</td>
+                        <td className="p-4 text-right font-mono font-black text-rose-500">
+                          {payroll.deductions > 0 ? `-₹${payroll.deductions.toLocaleString()}` : '₹0'}
+                        </td>
+                        <td className="p-4 text-right font-mono font-black text-slate-955 text-sm">₹{payroll.savedNetPayable.toLocaleString()}</td>
+                        <td className="p-4 text-center">
+                          <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                            hasPaid
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-250'
+                              : hasPartial
+                                ? 'bg-blue-50 text-blue-705 border border-blue-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-250'
+                          }`}>
+                            {hasPaid ? 'Paid' : hasPartial ? 'Partial' : 'Pending'}
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          {payroll.isPaid ? (
+                            <div className="flex flex-col items-center gap-1">
+                              <div className="text-[10px] text-slate-550 font-extrabold uppercase font-mono leading-tight">
+                                Paid: <span className="text-emerald-600">₹{payroll.savedAmountPaid.toLocaleString()}</span>
+                                {payroll.savedBalancePending > 0 && (
+                                  <> | Pending: <span className="text-rose-500">₹{payroll.savedBalancePending.toLocaleString()}</span></>
+                                )}
+                              </div>
+                              <div className="text-[8px] text-slate-400 font-bold uppercase">
+                                via {payroll.paidInfo.mode} on {payroll.paidInfo.date}
+                              </div>
+                              <button
+                                onClick={() => handleOpenPaymentModal(member, payroll)}
+                                className="text-[10px] text-rose-600 hover:text-rose-700 font-extrabold uppercase tracking-wider flex items-center gap-0.5 cursor-pointer mt-1"
+                              >
+                                Edit Payment
+                              </button>
                             </div>
-                            <div className="text-[8px] text-slate-400 font-bold uppercase">
-                              via {payroll.paidInfo.mode} on {payroll.paidInfo.date}
-                            </div>
+                          ) : (
                             <button
                               onClick={() => handleOpenPaymentModal(member, payroll)}
-                              className="mt-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black px-2 py-1 rounded text-[9px] uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95 border border-slate-200"
+                              className="bg-slate-900 hover:bg-slate-850 text-white font-black px-3.5 py-1.5 rounded-lg text-[10px] transition-colors cursor-pointer uppercase tracking-wider active:scale-95"
                             >
-                              ✏️ Edit Payment
+                              Settle Pay
                             </button>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => handleOpenPaymentModal(member, payroll)}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-3 py-1.5 rounded-md text-[10px] uppercase tracking-wider shadow-xs cursor-pointer active:scale-95 transition-all"
-                          >
-                            💵 Settle Payment
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {showModal && (
@@ -3939,9 +4473,12 @@ function POSWorkspace({ restaurant, onExit, user }) {
         posX: chatPos.x,
         posY: chatPos.y
       };
-      if (isHeader) {
-        e.preventDefault();
+      try {
+        e.target.setPointerCapture(e.pointerId);
+      } catch (err) {
+        console.warn("Failed to set pointer capture:", err);
       }
+      e.preventDefault();
     }
   };
 
@@ -4584,6 +5121,35 @@ function POSWorkspace({ restaurant, onExit, user }) {
     }
   };
 
+  const addMenuItemBatch = async (itemsList) => {
+    // Optimistic UI update
+    setMenuItems(prev => [...prev, ...itemsList]);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/menu/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          restaurantId: restaurant.id,
+          items: itemsList
+        })
+      });
+      if (res.ok) {
+        const savedItems = await res.json();
+        setMenuItems(prev => {
+          const filtered = prev.filter(p => !itemsList.some(item => item.name === p.name && item.category === p.category));
+          return [...filtered, ...savedItems];
+        });
+        alert(`Successfully imported ${savedItems.length} menu items!`);
+      } else {
+        throw new Error("Failed to save batch items on backend");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to batch save menu items to database!");
+    }
+  };
+
   const toggleItemStatus = async (item) => {
     const isCurrentlyInactive = item.status === 'Out of Stock';
     const nextStatus = isCurrentlyInactive ? 'In Stock' : 'Out of Stock';
@@ -4828,21 +5394,21 @@ function POSWorkspace({ restaurant, onExit, user }) {
   // Search input callbacks from Top Brand header toolbar
   const handleSearchTrigger = (searchType, searchVal) => {
     if (!searchVal) return;
-    if (searchType === 'bill') {
-      // Find matching order in database
-      const found = orders.find(o => o.id.includes(searchVal));
-      if (found) {
-        setPrintState({ view: 'bill', data: found });
-      } else {
-        alert(`Bill No "${searchVal}" not found in system database!`);
-      }
-    } else if (searchType === 'kot') {
-      const found = orders.find(o => o.id.includes(searchVal));
-      if (found) {
-        setPrintState({ view: 'kot', data: found });
-      } else {
-        alert(`KOT Ticket No "${searchVal}" not found!`);
-      }
+    const cleanVal = searchVal.trim().toLowerCase().replace(/^#/, '');
+    if (!cleanVal) return;
+
+    // Search for a matching order case-insensitively, ignoring '#' prefix, and allowing table matches
+    const found = orders.find(o => {
+      const orderId = String(o.id || '').toLowerCase().replace(/^#/, '');
+      const orderTable = String(o.table || '').toLowerCase();
+      return orderId.includes(cleanVal) || orderTable === cleanVal || orderTable.includes(cleanVal);
+    });
+
+    if (found) {
+      // Customer Bill should be shown for both searches (kot & bill)
+      setPrintState({ view: 'bill', data: found });
+    } else {
+      alert(`Order/Bill matching "${searchVal}" not found in system database!`);
     }
   };
 
@@ -4908,7 +5474,11 @@ function POSWorkspace({ restaurant, onExit, user }) {
             <KDS_Screen orders={orders} markOrderReady={markOrderReady} />
           )}
           {activeTab === 'menu' && (
-            <MenuManager menuItems={menuItems} addMenuItem={addMenuItem} />
+            <MenuManager 
+              menuItems={menuItems} 
+              addMenuItem={addMenuItem} 
+              addMenuItemBatch={addMenuItemBatch} 
+            />
           )}
           {activeTab === 'reports' && (
             <ReportsScreen 
@@ -4936,6 +5506,7 @@ function POSWorkspace({ restaurant, onExit, user }) {
               addExpense={addExpense}
               deleteExpense={deleteExpense}
               getStorageKey={getStorageKey}
+              restaurantId={restaurant.id}
             />
           )}
 
@@ -5482,7 +6053,8 @@ function POSWorkspace({ restaurant, onExit, user }) {
               }
               setShowChat(!showChat);
             }}
-            className="chat-bubble-btn bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-550 hover:to-red-650 text-white rounded-full p-4.5 shadow-xl border border-rose-550/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center relative group cursor-grab active:cursor-grabbing"
+            style={{ touchAction: 'none' }}
+            className="chat-bubble-btn touch-none bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-550 hover:to-red-650 text-white rounded-full p-4.5 shadow-xl border border-rose-550/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center relative group cursor-grab active:cursor-grabbing"
             title="Knife POS Live Support"
           >
             <Headphones className="w-6 h-6 animate-pulse" />
@@ -5496,11 +6068,16 @@ function POSWorkspace({ restaurant, onExit, user }) {
           {showChat && (
             <div className="absolute bottom-[72px] right-0 w-80 md:w-96 h-[480px] bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-left font-sans text-slate-100 animate-in fade-in slide-in-from-bottom-5 duration-300">
               {/* Header */}
-              <div className="chat-drag-handle p-4 bg-slate-955 border-b border-slate-850 flex items-center justify-between cursor-grab active:cursor-grabbing">
+              <div 
+                style={{ touchAction: 'none' }}
+                className="chat-drag-handle touch-none p-4 bg-slate-955 border-b border-slate-850 flex items-center justify-between cursor-grab active:cursor-grabbing"
+              >
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-500 relative">
                     <Headphones className="w-4.5 h-4.5" />
-                                        <h3 className="font-extrabold text-xs uppercase tracking-wide">Knife POS Support</h3>
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-xs uppercase tracking-wide">Knife POS Support</h3>
                     <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Online • Support Team</p>
                   </div>
                 </div>

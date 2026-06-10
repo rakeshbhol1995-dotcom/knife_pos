@@ -14,6 +14,7 @@ import Staff from './models/Staff.js';
 import Inquiry from './models/Inquiry.js';
 import ChatMessage from './models/ChatMessage.js';
 import Complaint from './models/Complaint.js';
+import Salary from './models/Salary.js';
 
 dotenv.config();
 
@@ -439,6 +440,31 @@ app.put('/api/staff/:id', async (req, res) => {
       return res.status(404).json({ message: 'Staff member not found' });
     }
     res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Salary Payments Routes
+app.get('/api/salaries/:restaurantId', async (req, res) => {
+  try {
+    const { restaurantId } = req.params;
+    const salaries = await Salary.find({ restaurantId });
+    res.json(salaries);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+app.post('/api/salaries', async (req, res) => {
+  try {
+    const salaryData = req.body;
+    const updated = await Salary.findOneAndUpdate(
+      { paidKey: salaryData.paidKey },
+      salaryData,
+      { upsert: true, new: true }
+    );
+    res.status(200).json(updated);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
