@@ -2438,7 +2438,7 @@ const ExpensesScreen = ({ expenses, orders, addExpense, deleteExpense }) => {
 };
 
 // --- Staff Screen Component ---
-const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, saveAttendance, addExpense, getStorageKey }) => {
+const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, saveAttendance, addExpense, deleteExpense, getStorageKey }) => {
   const [subTab, setSubTab] = useState('list');
   const [showModal, setShowModal] = useState(false);
   const [staffForm, setStaffForm] = useState({ name: '', role: 'Kitchen Helper', salary: '', contact: '', joined: new Date().toISOString().split('T')[0] });
@@ -2506,6 +2506,88 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
     saveAttendance(staffId, dateKey, next);
   };
 
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentForm, setPaymentForm] = useState({
+    memberId: '',
+    memberName: '',
+    baseSalary: 0,
+    calculatedNet: 0,
+    netPayable: 0,
+    amountPaid: 0,
+    balancePending: 0,
+    mode: 'Cash',
+    date: '',
+    notes: ''
+  });
+
+  const handleOpenPaymentModal = (employee, payrollInfo) => {
+    const paidKey = `${employee.id}_${payrollMonth}`;
+    const savedPayment = paidSalaries[paidKey];
+    
+    if (savedPayment) {
+      setPaymentForm({
+        memberId: employee.id,
+        memberName: employee.name,
+        baseSalary: employee.salary,
+        calculatedNet: payrollInfo.netPayout,
+        netPayable: savedPayment.netPayable !== undefined ? savedPayment.netPayable : (savedPayment.amount !== undefined ? savedPayment.amount : payrollInfo.netPayout),
+        amountPaid: savedPayment.amountPaid !== undefined ? savedPayment.amountPaid : (savedPayment.amount !== undefined ? savedPayment.amount : payrollInfo.netPayout),
+        balancePending: savedPayment.balancePending !== undefined ? savedPayment.balancePending : 0,
+        mode: savedPayment.mode || 'Cash',
+        date: savedPayment.date || new Date().toISOString().split('T')[0],
+        notes: savedPayment.notes || ''
+      });
+    } else {
+      setPaymentForm({
+        memberId: employee.id,
+        memberName: employee.name,
+        baseSalary: employee.salary,
+        calculatedNet: payrollInfo.netPayout,
+        netPayable: payrollInfo.netPayout,
+        amountPaid: payrollInfo.netPayout,
+        balancePending: 0,
+        mode: 'Cash',
+        date: new Date().toISOString().split('T')[0],
+        notes: ''
+      });
+    }
+    setShowPaymentModal(true);
+  };
+
+  const handleSavePayment = async (e) => {
+    e.preventDefault();
+    const paidKey = `${paymentForm.memberId}_${payrollMonth}`;
+    const expId = `EXP-SAL-${paymentForm.memberId}-${payrollMonth}`;
+    
+    if (deleteExpense) {
+      await deleteExpense(expId, true);
+    }
+    
+    setPaidSalaries(prev => ({
+      ...prev,
+      [paidKey]: {
+        netPayable: Number(paymentForm.netPayable),
+        amountPaid: Number(paymentForm.amountPaid),
+        balancePending: Number(paymentForm.balancePending),
+        mode: paymentForm.mode,
+        date: paymentForm.date,
+        notes: paymentForm.notes
+      }
+    }));
+
+    addExpense({
+      id: expId,
+      title: `Salary Payout - ${paymentForm.memberName} (${payrollMonth})`,
+      amount: Number(paymentForm.amountPaid),
+      category: 'Salaries',
+      date: paymentForm.date,
+      notes: `Net Payable: ₹${paymentForm.netPayable.toLocaleString()}, Paid: ₹${paymentForm.amountPaid.toLocaleString()}, Pending: ₹${paymentForm.balancePending.toLocaleString()}. Mode: ${paymentForm.mode}. ${paymentForm.notes}`
+    });
+
+    setShowPaymentModal(false);
+    alert("Salary payment details saved successfully!");
+  };
+
   const calculatePayroll = (employee) => {
     const days = getDaysInMonth(payrollMonth);
     let present = 0;
@@ -2531,41 +2613,20 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
     const paidKey = `${employee.id}_${payrollMonth}`;
     const paidInfo = paidSalaries[paidKey];
 
+    const savedNetPayable = paidInfo ? (paidInfo.netPayable !== undefined ? paidInfo.netPayable : paidInfo.amount) : netPayout;
+    const savedAmountPaid = paidInfo ? (paidInfo.amountPaid !== undefined ? paidInfo.amountPaid : paidInfo.amount) : 0;
+    const savedBalancePending = paidInfo ? (paidInfo.balancePending !== undefined ? paidInfo.balancePending : (paidInfo.amount ? 0 : netPayout)) : netPayout;
+
     return {
       present, absent, half, leave,
       deductions,
       netPayout,
+      savedNetPayable,
+      savedAmountPaid,
+      savedBalancePending,
       isPaid: !!paidInfo,
       paidInfo
     };
-  };
-
-  const handlePaySalary = (employee, payrollInfo) => {
-    const mode = prompt(`Confirm payment of ₹${payrollInfo.netPayout.toLocaleString()} to ${employee.name}. Enter payment mode (Cash / UPI / Bank):`, 'Cash');
-    if (mode === null) return;
-    
-    const validMode = ['Cash', 'UPI', 'Bank', 'Bank Transfer'].includes(mode) ? mode : 'Cash';
-    const paidKey = `${employee.id}_${payrollMonth}`;
-    
-    setPaidSalaries(prev => ({
-      ...prev,
-      [paidKey]: {
-        amount: payrollInfo.netPayout,
-        date: new Date().toISOString().split('T')[0],
-        mode: validMode
-      }
-    }));
-
-    addExpense({
-      id: `EXP-SAL-${Date.now()}`,
-      title: `Salary Payout - ${employee.name} (${payrollMonth})`,
-      amount: payrollInfo.netPayout,
-      category: 'Salaries',
-      date: new Date().toISOString().split('T')[0],
-      notes: `Attendance: Present: ${payrollInfo.present}d, Absent: ${payrollInfo.absent}d, Half: ${payrollInfo.half}d. Paid via ${validMode}`
-    });
-
-    alert("Salary payment logged and expense record added successfully!");
   };
 
   return (
@@ -2765,10 +2826,26 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
                 onClick={() => {
                   const rows = staff.map(member => {
                     const p = calculatePayroll(member);
-                    return [member.id, member.name, member.role, member.salary, p.present, p.absent, p.half, p.leave, p.deductions, p.netPayout, p.isPaid ? 'Paid' : 'Pending', p.isPaid ? p.paidInfo?.mode : '', p.isPaid ? p.paidInfo?.date : ''];
+                    return [
+                      member.id,
+                      member.name,
+                      member.role,
+                      member.salary,
+                      p.present,
+                      p.absent,
+                      p.half,
+                      p.leave,
+                      p.deductions,
+                      p.savedNetPayable,
+                      p.savedAmountPaid,
+                      p.savedBalancePending,
+                      p.isPaid ? (p.savedBalancePending > 0 ? 'Partial' : 'Paid') : 'Pending',
+                      p.isPaid ? p.paidInfo?.mode : '',
+                      p.isPaid ? p.paidInfo?.date : ''
+                    ];
                   });
                   exportToCSV(`payroll-${payrollMonth}.csv`,
-                    ['Staff ID','Name','Role','Base Salary','Present','Absent','Half','Leave','Deductions','Net Payable','Status','Payment Mode','Payment Date'],
+                    ['Staff ID','Name','Role','Base Salary','Present','Absent','Half','Leave','Deductions','Net Payable','Amount Paid','Pending Balance','Status','Payment Mode','Payment Date'],
                     rows
                   );
                 }}
@@ -2792,6 +2869,8 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
               <tbody className="divide-y divide-slate-100 text-slate-750 font-bold">
                 {staff.map(member => {
                   const payroll = calculatePayroll(member);
+                  const hasPartial = payroll.isPaid && payroll.savedBalancePending > 0;
+                  const hasPaid = payroll.isPaid && payroll.savedBalancePending <= 0;
                   return (
                     <tr key={member.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-4 font-black text-slate-900">
@@ -2805,21 +2884,40 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
                       <td className="p-4 text-right font-mono font-black text-rose-500">
                         {payroll.deductions > 0 ? `-₹${payroll.deductions.toLocaleString()}` : '₹0'}
                       </td>
-                      <td className="p-4 text-right font-mono font-black text-slate-950 text-sm">₹{payroll.netPayout.toLocaleString()}</td>
+                      <td className="p-4 text-right font-mono font-black text-slate-955 text-sm">₹{payroll.savedNetPayable.toLocaleString()}</td>
                       <td className="p-4 text-center">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${payroll.isPaid ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                          {payroll.isPaid ? 'Paid' : 'Pending'}
+                        <span className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
+                          hasPaid
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-250'
+                            : hasPartial
+                              ? 'bg-blue-50 text-blue-705 border border-blue-200'
+                              : 'bg-amber-50 text-amber-700 border border-amber-250'
+                        }`}>
+                          {hasPaid ? 'Paid' : hasPartial ? 'Partial' : 'Pending'}
                         </span>
                       </td>
                       <td className="p-4 text-center">
                         {payroll.isPaid ? (
-                          <div className="text-[10px] text-slate-400 font-extrabold uppercase font-mono leading-tight">
-                            Paid via {payroll.paidInfo.mode}
-                            <div className="text-[8px] font-normal">{payroll.paidInfo.date}</div>
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="text-[10px] text-slate-550 font-extrabold uppercase font-mono leading-tight">
+                              Paid: <span className="text-emerald-600">₹{payroll.savedAmountPaid.toLocaleString()}</span>
+                              {payroll.savedBalancePending > 0 && (
+                                <> | Baki: <span className="text-rose-500">₹{payroll.savedBalancePending.toLocaleString()}</span></>
+                              )}
+                            </div>
+                            <div className="text-[8px] text-slate-400 font-bold uppercase">
+                              via {payroll.paidInfo.mode} on {payroll.paidInfo.date}
+                            </div>
+                            <button
+                              onClick={() => handleOpenPaymentModal(member, payroll)}
+                              className="mt-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black px-2 py-1 rounded text-[9px] uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95 border border-slate-200"
+                            >
+                              ✏️ Edit Payment
+                            </button>
                           </div>
                         ) : (
                           <button
-                            onClick={() => handlePaySalary(member, payroll)}
+                            onClick={() => handleOpenPaymentModal(member, payroll)}
                             className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-3 py-1.5 rounded-md text-[10px] uppercase tracking-wider shadow-xs cursor-pointer active:scale-95 transition-all"
                           >
                             💵 Settle Payment
@@ -3006,6 +3104,134 @@ const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, sa
               <button type="submit" className="w-full bg-slate-900 hover:bg-slate-850 text-white font-extrabold py-3.5 rounded-xl transition-colors uppercase tracking-wider text-xs shadow-md">
                 Save changes
               </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showPaymentModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs select-none">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-100 overflow-hidden font-sans">
+            <div className="p-4 bg-slate-955 text-white flex justify-between items-center">
+              <h3 className="font-extrabold text-sm uppercase tracking-wider flex items-center gap-1.5">
+                <IndianRupee className="w-4.5 h-4.5 text-rose-455" /> Record / Edit Salary Payment
+              </h3>
+              <button onClick={() => setShowPaymentModal(false)} className="hover:text-rose-455 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSavePayment} className="p-6 space-y-4">
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1.5 text-left">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-700">
+                  <span>Employee:</span>
+                  <span className="text-slate-900 font-black">{paymentForm.memberName}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs font-bold text-slate-750">
+                  <span>Staff ID:</span>
+                  <span className="text-slate-900 font-black">{paymentForm.memberId}</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-extrabold text-slate-400 uppercase tracking-wide pt-1 border-t border-slate-200/80">
+                  <span>Calculated Target:</span>
+                  <span className="font-mono text-slate-500">₹{paymentForm.calculatedNet.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="text-left">
+                <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Net Payable (dia haba) (₹)</label>
+                <input
+                  type="number"
+                  required
+                  value={paymentForm.netPayable}
+                  onChange={e => {
+                    const val = Number(e.target.value || 0);
+                    setPaymentForm(prev => ({
+                      ...prev,
+                      netPayable: e.target.value === '' ? '' : val,
+                      balancePending: (e.target.value === '' ? 0 : val) - prev.amountPaid
+                    }));
+                  }}
+                  placeholder="₹15000"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-black text-xs font-mono"
+                />
+              </div>
+
+              <div className="text-left">
+                <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Amount Paid (deicha) (₹)</label>
+                <input
+                  type="number"
+                  required
+                  value={paymentForm.amountPaid}
+                  onChange={e => {
+                    const val = Number(e.target.value || 0);
+                    setPaymentForm(prev => ({
+                      ...prev,
+                      amountPaid: e.target.value === '' ? '' : val,
+                      balancePending: prev.netPayable - (e.target.value === '' ? 0 : val)
+                    }));
+                  }}
+                  placeholder="₹15000"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-black text-xs font-mono"
+                />
+              </div>
+
+              <div className="flex justify-between items-center p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <span className="text-xs font-bold text-slate-605">Balance Pending (baki) (₹):</span>
+                <span className={`font-mono text-sm font-black ${paymentForm.balancePending > 0 ? 'text-rose-600 animate-pulse' : 'text-emerald-600'}`}>
+                  ₹{Number(paymentForm.balancePending || 0).toLocaleString()}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-left">
+                <div>
+                  <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Payment Mode</label>
+                  <select
+                    value={paymentForm.mode}
+                    onChange={e => setPaymentForm({ ...paymentForm, mode: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-355 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-semibold text-xs cursor-pointer font-bold"
+                  >
+                    <option value="Cash">Cash</option>
+                    <option value="UPI">UPI</option>
+                    <option value="Bank">Bank Transfer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Payment Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={paymentForm.date}
+                    onChange={e => setPaymentForm({ ...paymentForm, date: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold text-xs font-mono cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div className="text-left">
+                <label className="block text-xs font-bold text-slate-605 mb-1 uppercase tracking-wide">Notes</label>
+                <textarea
+                  value={paymentForm.notes}
+                  onChange={e => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                  placeholder="e.g. Paid part salary, balance next week"
+                  rows={2}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-medium text-xs font-sans"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPaymentModal(false)}
+                  className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold py-3 rounded-xl transition-colors uppercase tracking-wider text-xs shadow-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-550 hover:to-teal-650 text-white font-extrabold py-3 rounded-xl transition-colors uppercase tracking-wider text-xs shadow-md cursor-pointer"
+                >
+                  Save Payment
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -3708,6 +3934,63 @@ function POSWorkspace({ restaurant, onExit, user }) {
   
   // Live Support Chat states
   const [showChat, setShowChat] = useState(false);
+  const [chatPos, setChatPos] = useState({ x: 24, y: 24 });
+  const [isDraggingChat, setIsDraggingChat] = useState(false);
+  const [hasDraggedChat, setHasDraggedChat] = useState(false);
+  const dragStartRef = React.useRef({ mouseX: 0, mouseY: 0, posX: 24, posY: 24 });
+
+  const handleChatPointerDown = (e) => {
+    const isBubble = e.target.closest('.chat-bubble-btn');
+    const isHeader = e.target.closest('.chat-drag-handle');
+    if (isBubble || isHeader) {
+      setIsDraggingChat(true);
+      setHasDraggedChat(false);
+      dragStartRef.current = {
+        mouseX: e.clientX,
+        mouseY: e.clientY,
+        posX: chatPos.x,
+        posY: chatPos.y
+      };
+      if (isHeader) {
+        e.preventDefault();
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!isDraggingChat) return;
+
+    const handlePointerMove = (e) => {
+      const deltaX = e.clientX - dragStartRef.current.mouseX;
+      const deltaY = e.clientY - dragStartRef.current.mouseY;
+
+      if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) {
+        setHasDraggedChat(true);
+      }
+
+      let newRight = dragStartRef.current.posX - deltaX;
+      let newBottom = dragStartRef.current.posY - deltaY;
+
+      // Keep within bounds of screen
+      newRight = Math.max(10, Math.min(window.innerWidth - 80, newRight));
+      newBottom = Math.max(10, Math.min(window.innerHeight - 80, newBottom));
+
+      setChatPos({ x: newRight, y: newBottom });
+    };
+
+    const handlePointerUp = () => {
+      setIsDraggingChat(false);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [isDraggingChat]);
+
   const [isChatVerified, setIsChatVerified] = useState(false);
   const [chatMessages, setChatMessages] = useState([
     { sender: 'support', message: "Hello! Welcome to Knife POS Support. Please enter your numerical Unique Support ID to connect to our support team.", timestamp: new Date().toISOString() }
@@ -4363,7 +4646,7 @@ function POSWorkspace({ restaurant, onExit, user }) {
     }
   };
 
-  const deleteExpense = async (expId) => {
+  const deleteExpense = async (expId, silent = false) => {
     // Optimistic UI update
     setExpenses(prev => prev.filter(e => e.id !== expId && e._id !== expId));
 
@@ -4371,12 +4654,14 @@ function POSWorkspace({ restaurant, onExit, user }) {
       const res = await fetch(`${API_BASE}/api/expenses/${expId}`, {
         method: 'DELETE'
       });
-      if (!res.ok) {
+      if (!res.ok && !silent) {
         throw new Error("Failed to delete expense from server");
       }
     } catch (err) {
-      console.error(err);
-      alert("Failed to delete expense from database!");
+      if (!silent) {
+        console.error(err);
+        alert("Failed to delete expense from database!");
+      }
     }
   };
 
@@ -4661,6 +4946,7 @@ function POSWorkspace({ restaurant, onExit, user }) {
               attendance={attendance} 
               saveAttendance={saveAttendance}
               addExpense={addExpense}
+              deleteExpense={deleteExpense}
               getStorageKey={getStorageKey}
             />
           )}
@@ -5191,11 +5477,24 @@ function POSWorkspace({ restaurant, onExit, user }) {
           )}
 
         {/* Floating Live Chat Bubble */}
-        <div className="fixed bottom-6 right-6 z-50 select-none print:hidden">
+        <div 
+          className="fixed z-50 select-none print:hidden"
+          style={{
+            bottom: `${chatPos.y}px`,
+            right: `${chatPos.x}px`
+          }}
+          onPointerDown={handleChatPointerDown}
+        >
           {/* Chat Bubble Toggle Button */}
           <button 
-            onClick={() => setShowChat(!showChat)}
-            className="bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-550 hover:to-red-650 text-white rounded-full p-4.5 shadow-xl border border-rose-550/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center relative group"
+            onClick={() => {
+              if (hasDraggedChat) {
+                setHasDraggedChat(false);
+                return;
+              }
+              setShowChat(!showChat);
+            }}
+            className="chat-bubble-btn bg-gradient-to-r from-rose-600 to-red-700 hover:from-rose-550 hover:to-red-650 text-white rounded-full p-4.5 shadow-xl border border-rose-550/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center relative group cursor-grab active:cursor-grabbing"
             title="Knife POS Live Support"
           >
             <Headphones className="w-6 h-6 animate-pulse" />
@@ -5207,9 +5506,9 @@ function POSWorkspace({ restaurant, onExit, user }) {
 
           {/* Chat Panel */}
           {showChat && (
-            <div className="fixed bottom-24 right-6 w-80 md:w-96 h-[480px] bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-left font-sans text-slate-100 animate-in fade-in slide-in-from-bottom-5 duration-300">
+            <div className="absolute bottom-[72px] right-0 w-80 md:w-96 h-[480px] bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl flex flex-col overflow-hidden text-left font-sans text-slate-100 animate-in fade-in slide-in-from-bottom-5 duration-300">
               {/* Header */}
-              <div className="p-4 bg-slate-955 border-b border-slate-850 flex items-center justify-between">
+              <div className="chat-drag-handle p-4 bg-slate-955 border-b border-slate-850 flex items-center justify-between cursor-grab active:cursor-grabbing">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-500 relative">
                     <Headphones className="w-4.5 h-4.5" />
