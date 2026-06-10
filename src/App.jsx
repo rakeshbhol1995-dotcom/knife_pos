@@ -56,33 +56,42 @@ const NonVegBadge = () => (
   </div>
 );
 
-// --- Image Selector ---
-const getFoodImage = (category, name) => {
-  // High fidelity local generated category images matching the menu
-  switch (category) {
-    case 'Soups':
-      return '/categories/soups.png';
-    case 'Veg Starters':
-    case 'Chicken Starters':
-    case 'Mutton & Seafood Starters':
-      return '/categories/starters.png';
-    case 'Tandoor Veg':
-    case 'Tandoor Non-Veg':
-      return '/categories/tandoor.png';
-    case 'Veg Main Course':
-    case 'Chicken Main Course':
-    case 'Mutton Main Course':
-    case 'Seafood Main Course':
-      return '/categories/main_course.png';
-    case 'Breads / Roti':
-      return '/categories/breads.png';
-    case 'Rice & Biryani':
-      return '/categories/biryani.png';
-    case 'Noodles & Fried Rice':
-      return '/categories/noodles.png';
-    default:
-      return '/categories/main_course.png';
-  }
+// --- Category Style Map: colorful gradient + emoji for each food category ---
+const getCategoryStyle = (category = '') => {
+  const cat = category.toLowerCase();
+  if (cat.includes('soup')) return { bg: 'bg-gradient-to-br from-amber-100 to-orange-200', emoji: '🍲', tag: 'Soup' };
+  if (cat.includes('veg starter') || (cat.includes('starter') && cat.includes('veg'))) return { bg: 'bg-gradient-to-br from-green-100 to-emerald-200', emoji: '🥗', tag: 'Starter' };
+  if (cat.includes('chicken starter') || (cat.includes('starter') && cat.includes('chicken'))) return { bg: 'bg-gradient-to-br from-orange-100 to-red-200', emoji: '🍗', tag: 'Starter' };
+  if (cat.includes('starter')) return { bg: 'bg-gradient-to-br from-rose-100 to-pink-200', emoji: '🍢', tag: 'Starter' };
+  if (cat.includes('tandoor') && cat.includes('veg')) return { bg: 'bg-gradient-to-br from-yellow-100 to-lime-200', emoji: '🫕', tag: 'Tandoor' };
+  if (cat.includes('tandoor')) return { bg: 'bg-gradient-to-br from-red-100 to-rose-200', emoji: '🔥', tag: 'Tandoor' };
+  if (cat.includes('veg main') || (cat.includes('main') && cat.includes('veg'))) return { bg: 'bg-gradient-to-br from-green-100 to-teal-200', emoji: '🥘', tag: 'Main' };
+  if (cat.includes('chicken main') || (cat.includes('main') && cat.includes('chicken'))) return { bg: 'bg-gradient-to-br from-orange-100 to-amber-200', emoji: '🍛', tag: 'Main' };
+  if (cat.includes('mutton main') || (cat.includes('main') && cat.includes('mutton'))) return { bg: 'bg-gradient-to-br from-red-100 to-orange-200', emoji: '🍖', tag: 'Main' };
+  if (cat.includes('seafood') || cat.includes('fish')) return { bg: 'bg-gradient-to-br from-blue-100 to-cyan-200', emoji: '🐟', tag: 'Seafood' };
+  if (cat.includes('bread') || cat.includes('roti') || cat.includes('naan')) return { bg: 'bg-gradient-to-br from-yellow-50 to-amber-200', emoji: '🫓', tag: 'Bread' };
+  if (cat.includes('biryani') || cat.includes('rice')) return { bg: 'bg-gradient-to-br from-yellow-100 to-orange-200', emoji: '🍚', tag: 'Rice' };
+  if (cat.includes('noodle') || cat.includes('fried rice')) return { bg: 'bg-gradient-to-br from-indigo-100 to-violet-200', emoji: '🍜', tag: 'Noodles' };
+  if (cat.includes('dessert') || cat.includes('sweet') || cat.includes('ice')) return { bg: 'bg-gradient-to-br from-pink-100 to-fuchsia-200', emoji: '🍨', tag: 'Dessert' };
+  if (cat.includes('drink') || cat.includes('beverage') || cat.includes('juice') || cat.includes('cold')) return { bg: 'bg-gradient-to-br from-sky-100 to-blue-200', emoji: '🥤', tag: 'Drink' };
+  if (cat.includes('snack') || cat.includes('chaat')) return { bg: 'bg-gradient-to-br from-lime-100 to-green-200', emoji: '🥨', tag: 'Snack' };
+  if (cat.includes('salad')) return { bg: 'bg-gradient-to-br from-emerald-50 to-green-200', emoji: '🥙', tag: 'Salad' };
+  return { bg: 'bg-gradient-to-br from-slate-100 to-blue-100', emoji: '🍽️', tag: 'Food' };
+};
+
+// --- CSV / Excel Export Utility ---
+const exportToCSV = (filename, headers, rows) => {
+  const csvContent = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+  ].join('\n');
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
 };
 
 // --- Mock Data Definitions ---
@@ -388,7 +397,112 @@ const generateMockOrders = () => {
   return mockOrders;
 };
 
-// --- SVG Chart Components ---
+// ============================================================
+// PREMIUM SVG CHART COMPONENTS
+// ============================================================
+
+// 1. Animated Gradient Bar Chart — for daily sales
+const SVGBarChart = ({ data, colorFrom = '#ef4444', colorTo = '#f97316', label = '₹' }) => {
+  if (!data || data.length === 0) return <div className="text-xs text-slate-400 py-12 text-center font-bold">No data available</div>;
+  const maxVal = Math.max(...data.map(d => d.value), 1);
+  const BAR_W = Math.max(10, Math.floor(480 / data.length) - 4);
+  const H = 200, W = 520, PAD = 40;
+  const chartH = H - PAD - 20;
+  const barGap = (W - PAD * 2) / data.length;
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full font-sans">
+      <defs>
+        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={colorFrom} stopOpacity="1"/>
+          <stop offset="100%" stopColor={colorTo} stopOpacity="0.6"/>
+        </linearGradient>
+        <linearGradient id="barGradHover" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={colorFrom} stopOpacity="1"/>
+          <stop offset="100%" stopColor={colorTo} stopOpacity="0.9"/>
+        </linearGradient>
+      </defs>
+      {/* Grid lines */}
+      {[0, 0.25, 0.5, 0.75, 1].map((r, i) => {
+        const y = PAD + chartH * r;
+        return (
+          <g key={i}>
+            <line x1={PAD} y1={y} x2={W - 10} y2={y} stroke="#f1f5f9" strokeWidth="1" strokeDasharray="4,3"/>
+            <text x={PAD - 4} y={y + 3} textAnchor="end" fontSize="9" fill="#94a3b8" fontWeight="700">{label}{Math.round(maxVal * (1 - r) / 1000)}k</text>
+          </g>
+        );
+      })}
+      {/* Bars */}
+      {data.map((d, i) => {
+        const barH = Math.max(2, (d.value / maxVal) * chartH);
+        const x = PAD + i * barGap + (barGap - Math.min(BAR_W, barGap - 6)) / 2;
+        const y = PAD + chartH - barH;
+        const bw = Math.min(BAR_W, barGap - 6);
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={bw} height={barH} rx="4" fill="url(#barGrad)" className="transition-all duration-300 hover:opacity-90">
+              <title>{d.label}: {label}{d.value.toLocaleString()}</title>
+            </rect>
+            {d.value > 0 && barH > 16 && (
+              <text x={x + bw/2} y={y - 4} textAnchor="middle" fontSize="8" fill={colorFrom} fontWeight="800">
+                {d.value > 999 ? `${(d.value/1000).toFixed(1)}k` : d.value}
+              </text>
+            )}
+            <text x={x + bw/2} y={H - 4} textAnchor="middle" fontSize="8" fill="#64748b" fontWeight="700">{d.label}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
+// 2. Payment Mode Donut Chart
+const SVGPaymentPieChart = ({ cash = 0, upi = 0, card = 0 }) => {
+  const total = cash + upi + card || 1;
+  const segments = [
+    { label: 'Cash', value: cash, color: '#f59e0b' },
+    { label: 'UPI', value: upi, color: '#ef4444' },
+    { label: 'Card', value: card, color: '#3b82f6' },
+  ].filter(s => s.value > 0);
+
+  const R = 55, cx = 85, cy = 75;
+  let acc = -Math.PI / 2;
+
+  const arc = (startAngle, endAngle, r) => {
+    const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+    const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+    const large = endAngle - startAngle > Math.PI ? 1 : 0;
+    return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+  };
+
+  return (
+    <div className="flex items-center gap-4 justify-center">
+      <svg viewBox="0 0 170 150" className="w-36 h-36">
+        {segments.map((seg, i) => {
+          const angle = (seg.value / total) * Math.PI * 2;
+          const path = arc(acc, acc + angle, R);
+          acc += angle;
+          return <path key={i} d={path} fill={seg.color} opacity="0.9" className="hover:opacity-100 transition-opacity cursor-pointer"><title>{seg.label}: ₹{seg.value.toLocaleString()} ({Math.round(seg.value/total*100)}%)</title></path>;
+        })}
+        <circle cx={cx} cy={cy} r="33" fill="white"/>
+        <text x={cx} y={cy - 6} textAnchor="middle" fontSize="8" fill="#64748b" fontWeight="900">Total</text>
+        <text x={cx} y={cy + 8} textAnchor="middle" fontSize="10" fill="#0f172a" fontWeight="900">₹{(cash+upi+card).toLocaleString()}</text>
+      </svg>
+      <div className="space-y-2">
+        {segments.map((seg, i) => (
+          <div key={i} className="flex items-center gap-2 text-xs font-bold">
+            <span className="w-3 h-3 rounded-full shrink-0" style={{backgroundColor: seg.color}}></span>
+            <span className="text-slate-600">{seg.label}</span>
+            <span className="text-slate-800 font-black ml-1">₹{seg.value.toLocaleString()}</span>
+            <span className="text-slate-400">({Math.round(seg.value/total*100)}%)</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+
 const SVGLineChart = ({ data }) => {
   if (!data || data.length === 0) {
     return <div className="text-xs text-slate-400 py-12 text-center font-bold font-sans">No data available</div>;
@@ -502,6 +616,114 @@ const SVGDonutChart = ({ data }) => {
   );
 };
 
+
+// 3. Premium Dual Path Trend Chart (Daily Sales vs Daily Expenses P&L)
+const SVGDualTrendChart = ({ data }) => {
+  if (!data || data.length === 0) {
+    return <div className="text-xs text-slate-400 py-12 text-center font-bold font-sans">No data available</div>;
+  }
+  const maxVal = Math.max(...data.map(d => Math.max(d.sales, d.expenses)), 100);
+  const height = 200;
+  const width = 520;
+  const padding = 35;
+  const chartHeight = height - padding * 2;
+  const chartWidth = width - padding * 2;
+
+  // Build points for Sales
+  const salesPoints = data.map((d, index) => {
+    const x = padding + (index / (data.length - 1 || 1)) * chartWidth;
+    const y = padding + chartHeight - (d.sales / maxVal) * chartHeight;
+    return `${x},${y}`;
+  }).join(' ');
+  const salesAreaPoints = `${padding},${height - padding} ` + salesPoints + ` ${width - padding},${height - padding}`;
+
+  // Build points for Expenses
+  const expPoints = data.map((d, index) => {
+    const x = padding + (index / (data.length - 1 || 1)) * chartWidth;
+    const y = padding + chartHeight - (d.expenses / maxVal) * chartHeight;
+    return `${x},${y}`;
+  }).join(' ');
+  const expAreaPoints = `${padding},${height - padding} ` + expPoints + ` ${width - padding},${height - padding}`;
+
+  return (
+    <div className="w-full h-full flex flex-col justify-between">
+      <div className="flex justify-center gap-6 mb-2 text-xs font-bold font-sans select-none">
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full bg-emerald-500"></span>
+          <span className="text-slate-650">Daily Sales (Revenue)</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded-full bg-rose-500"></span>
+          <span className="text-slate-655">Daily Expenses</span>
+        </div>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full font-sans">
+        <defs>
+          <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.2"/>
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.0"/>
+          </linearGradient>
+          <linearGradient id="expGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#ef4444" stopOpacity="0.15"/>
+            <stop offset="100%" stopColor="#ef4444" stopOpacity="0.0"/>
+          </linearGradient>
+        </defs>
+        
+        {/* Y Axis Gridlines */}
+        {[0, 0.25, 0.5, 0.75, 1].map((r, idx) => {
+          const y = padding + chartHeight * r;
+          const val = Math.round(maxVal * (1 - r));
+          return (
+            <g key={idx}>
+              <line x1={padding} y1={y} x2={width - padding} y2={y} stroke="#f1f5f9" strokeWidth="1" strokeDasharray="3,3" />
+              <text x={padding - 8} y={y + 3} textAnchor="end" className="text-[9px] fill-slate-450 font-extrabold font-mono">₹{val > 999 ? `${(val/1000).toFixed(1)}k` : val}</text>
+            </g>
+          );
+        })}
+
+        {/* Areas */}
+        <polygon points={salesAreaPoints} fill="url(#salesGrad)" />
+        <polygon points={expAreaPoints} fill="url(#expGrad)" />
+
+        {/* Lines */}
+        <polyline fill="none" stroke="#10b981" strokeWidth="2.5" points={salesPoints} strokeLinecap="round" strokeLinejoin="round" />
+        <polyline fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="2,2" points={expPoints} strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Interaction Circles */}
+        {data.map((d, index) => {
+          const x = padding + (index / (data.length - 1 || 1)) * chartWidth;
+          const yS = padding + chartHeight - (d.sales / maxVal) * chartHeight;
+          const yE = padding + chartHeight - (d.expenses / maxVal) * chartHeight;
+          return (
+            <g key={index} className="group cursor-pointer">
+              {d.sales > 0 && (
+                <circle cx={x} cy={yS} r="3.5" className="fill-white stroke-emerald-500 stroke-[2px] hover:r-5 transition-all">
+                  <title>{`Day ${d.label}: Sales ₹${d.sales.toLocaleString()}`}</title>
+                </circle>
+              )}
+              {d.expenses > 0 && (
+                <circle cx={x} cy={yE} r="3" className="fill-white stroke-rose-500 stroke-[1.5px] hover:r-5 transition-all">
+                  <title>{`Day ${d.label}: Expense ₹${d.expenses.toLocaleString()}`}</title>
+                </circle>
+              )}
+            </g>
+          );
+        })}
+
+        {/* X Axis Labels */}
+        {data.map((d, index) => {
+          if (data.length > 15 && index % 3 !== 0) return null;
+          const x = padding + (index / (data.length - 1 || 1)) * chartWidth;
+          return (
+            <text key={index} x={x} y={height - 8} textAnchor="middle" className="text-[9px] fill-slate-400 font-black font-mono">Day {d.label}</text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
+
 // --- Top Brand Header & ToolBar (Petpooja Authentic Layout) ---
 const TopBrandBar = ({ activeTab, onNewOrderClick, onSearchClick, onToolbarClick, isStoreClosed, zomatoSwiggyStatus, restaurant, onExit }) => {
   const [time, setTime] = useState('');
@@ -521,7 +743,7 @@ const TopBrandBar = ({ activeTab, onNewOrderClick, onSearchClick, onToolbarClick
       <div className="w-full bg-slate-100 px-4 py-1.5 flex justify-between items-center text-[11px] font-bold text-slate-600 border-b border-slate-200 select-none">
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-[#ef4444] animate-pulse inline-block"></span>
-          <span>{restaurant ? `${restaurant.name.toUpperCase()} (${restaurant.id.toUpperCase()})` : 'URMI KITCHEN (R391308)'} - The Finest Restaurant Management Platform</span>
+          <span>{restaurant ? `${restaurant.name.toUpperCase()} (${restaurant.id.toUpperCase()}) | UNIQUE SUPPORT ID: ${restaurant.uniqueId || 'N/A'}` : 'URMI KITCHEN (R391308)'} - The Finest Restaurant Management Platform</span>
         </div>
         <div className="flex items-center gap-4 text-slate-500">
           <span>Date: {new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
@@ -1064,6 +1286,7 @@ const POSScreen = ({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredItems.map(item => {
               const isInactive = inactiveItems.includes(item.id);
+              const catStyle = getCategoryStyle(item.category);
               return (
                 <div
                   key={item.id}
@@ -1074,37 +1297,35 @@ const POSScreen = ({
                     }
                     addToCart(item);
                   }}
-                  className={`bg-white rounded-xl shadow-xs border border-slate-255 overflow-hidden hover:shadow-md hover:border-[#ef4444] transition-all cursor-pointer group flex flex-col h-full relative ${isInactive ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  className={`bg-white rounded-xl shadow-xs border border-slate-200 p-3 hover:shadow-md hover:border-rose-400 hover:-translate-y-0.5 transition-all duration-200 cursor-pointer group flex flex-col justify-between h-28 relative ${isInactive ? 'opacity-55 cursor-not-allowed' : ''}`}
                 >
                   {isInactive && (
-                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-10 select-none">
+                    <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-10 select-none rounded-xl">
                       <span className="bg-rose-600 text-white font-black text-[9px] uppercase tracking-widest px-2.5 py-1 rounded shadow-md">
                         Sold Out
                       </span>
                     </div>
                   )}
-                  <div className="h-32 w-full overflow-hidden relative bg-slate-100">
-                    <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    <div className="absolute top-2 left-2 bg-white/95 backdrop-blur-xs p-1 rounded-md shadow-sm flex items-center justify-center">
-                      {item.type === 'Veg' ? <VegBadge /> : <NonVegBadge />}
+                  
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center justify-between gap-1.5 mb-1.5 select-none">
+                      <span className="text-[9px] font-black text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded uppercase tracking-wider truncate max-w-[110px]" title={item.category}>
+                        {item.category}
+                      </span>
+                      <div className="shrink-0 scale-90">
+                        {item.type === 'Veg' ? <VegBadge /> : <NonVegBadge />}
+                      </div>
                     </div>
+                    <h3 className="font-extrabold text-slate-800 text-xs sm:text-sm leading-snug group-hover:text-rose-600 transition-colors line-clamp-2">
+                      {item.name}
+                    </h3>
                   </div>
                   
-                  <div className="p-3 flex flex-col flex-1 justify-between select-none">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{item.category}</span>
-                      </div>
-                      <h3 className="font-extrabold text-slate-850 text-sm mb-1 leading-tight group-hover:text-rose-600 transition-colors">
-                        {item.name}
-                      </h3>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between">
-                      <span className="text-rose-600 font-black text-sm">₹{item.price}</span>
-                      <button className="w-8 h-8 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition-colors cursor-pointer font-sans font-bold">
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
+                  <div className="flex items-center justify-between mt-1 select-none">
+                    <span className="text-rose-600 font-black text-sm sm:text-base font-mono">₹{item.price}</span>
+                    <button className="w-7 h-7 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center hover:bg-rose-600 hover:text-white transition-all duration-150 cursor-pointer shadow-sm">
+                      <Plus className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               );
@@ -1360,8 +1581,21 @@ const KDS_Screen = ({ orders, markOrderReady }) => {
 };
 
 // --- Menu Manager Component ---
+const DEFAULT_CATEGORIES = [
+  'Soups', 'Veg Starters', 'Chicken Starters', 'Mutton & Seafood Starters',
+  'Tandoor Veg', 'Tandoor Non-Veg', 'Veg Main Course', 'Chicken Main Course',
+  'Mutton Main Course', 'Seafood Main Course', 'Breads / Roti',
+  'Rice & Biryani', 'Noodles & Fried Rice', 'Desserts', 'Cold Drinks & Beverages'
+];
+
 const MenuManager = ({ menuItems, addMenuItem }) => {
-  const [newItem, setNewItem] = useState({ name: '', price: '', category: 'Soups', type: 'Veg', image: '' });
+  const [newItem, setNewItem] = useState({ name: '', price: '', category: 'Soups', type: 'Veg' });
+  const [customCategories, setCustomCategories] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('knife_pos_custom_categories') || '[]'); } catch { return []; }
+  });
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const allCategories = [...DEFAULT_CATEGORIES, ...customCategories];
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -1370,10 +1604,22 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
       ...newItem,
       id: Date.now(),
       price: Number(newItem.price),
-      image: newItem.image || getFoodImage(newItem.category, newItem.name)
     });
-    setNewItem({ name: '', price: '', category: 'Soups', type: 'Veg', image: '' });
+    setNewItem({ name: '', price: '', category: newItem.category, type: newItem.type });
   };
+
+  const handleAddCategory = (e) => {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+    const updated = [...customCategories, newCatName.trim()];
+    setCustomCategories(updated);
+    localStorage.setItem('knife_pos_custom_categories', JSON.stringify(updated));
+    setNewItem(prev => ({ ...prev, category: newCatName.trim() }));
+    setNewCatName('');
+    setShowAddCat(false);
+  };
+
+  const catStyle = getCategoryStyle(newItem.category);
 
   return (
     <div className="pos-menu-manager flex h-full bg-slate-50 print:hidden font-sans select-none">
@@ -1383,105 +1629,117 @@ const MenuManager = ({ menuItems, addMenuItem }) => {
         </h2>
 
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 max-w-2xl">
-          <h3 className="text-base font-extrabold mb-4 text-slate-700 uppercase tracking-wider">Add New Item</h3>
+          <h3 className="text-base font-extrabold mb-4 text-slate-700 uppercase tracking-wider flex items-center gap-2">
+            Add New Item
+            <span className={`text-2xl ml-auto`}>{catStyle.emoji}</span>
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Item Name</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Item Name *</label>
                 <input
-                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold"
+                  required
+                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold text-sm"
                   value={newItem.name}
                   onChange={e => setNewItem({ ...newItem, name: e.target.value })}
                   placeholder="e.g. Kadai Paneer"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Price (₹)</label>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Price (₹) *</label>
                 <input
                   type="number"
-                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-black font-mono"
+                  required
+                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-black font-mono text-sm"
                   value={newItem.price}
                   onChange={e => setNewItem({ ...newItem, price: e.target.value })}
-                  placeholder="0.00"
+                  placeholder="0"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Category</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-600 uppercase tracking-wide">Category</label>
+                  <button type="button" onClick={() => setShowAddCat(true)} className="text-[10px] text-rose-600 font-extrabold uppercase tracking-wider hover:text-rose-700 flex items-center gap-0.5 cursor-pointer">
+                    <Plus className="w-3 h-3"/> New Category
+                  </button>
+                </div>
                 <select
-                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-semibold cursor-pointer"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-semibold cursor-pointer text-sm"
                   value={newItem.category}
                   onChange={e => setNewItem({ ...newItem, category: e.target.value })}
                 >
-                  <option>Soups</option>
-                  <option>Veg Starters</option>
-                  <option>Chicken Starters</option>
-                  <option>Mutton & Seafood Starters</option>
-                  <option>Tandoor Veg</option>
-                  <option>Tandoor Non-Veg</option>
-                  <option>Veg Main Course</option>
-                  <option>Chicken Main Course</option>
-                  <option>Mutton Main Course</option>
-                  <option>Seafood Main Course</option>
-                  <option>Breads / Roti</option>
-                  <option>Rice & Biryani</option>
-                  <option>Noodles & Fried Rice</option>
+                  {allCategories.map(cat => <option key={cat}>{cat}</option>)}
                 </select>
+                {showAddCat && (
+                  <form onSubmit={handleAddCategory} className="mt-2 flex gap-2">
+                    <input
+                      autoFocus
+                      value={newCatName}
+                      onChange={e => setNewCatName(e.target.value)}
+                      placeholder="e.g. Special Thali"
+                      className="flex-1 p-2 text-xs border border-rose-300 rounded-lg outline-none focus:ring-2 focus:ring-rose-500 font-bold"
+                    />
+                    <button type="submit" className="bg-rose-600 text-white px-3 py-2 rounded-lg text-xs font-black cursor-pointer">Add</button>
+                    <button type="button" onClick={() => setShowAddCat(false)} className="bg-slate-200 text-slate-700 px-3 py-2 rounded-lg text-xs font-black cursor-pointer">✕</button>
+                  </form>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Type</label>
                 <div className="flex gap-4 pt-2">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="type"
-                      checked={newItem.type === 'Veg'}
-                      onChange={() => setNewItem({ ...newItem, type: 'Veg' })}
-                      className="text-rose-600 focus:ring-rose-500 h-4 w-4"
-                    />
-                    <div className="flex items-center gap-1">
-                      <VegBadge />
-                      <span className="text-xs font-bold text-slate-700">Veg</span>
-                    </div>
+                    <input type="radio" name="type" checked={newItem.type === 'Veg'} onChange={() => setNewItem({ ...newItem, type: 'Veg' })} className="text-rose-600 focus:ring-rose-500 h-4 w-4"/>
+                    <div className="flex items-center gap-1"><VegBadge /><span className="text-xs font-bold text-slate-700">Veg</span></div>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="type"
-                      checked={newItem.type === 'Non-Veg'}
-                      onChange={() => setNewItem({ ...newItem, type: 'Non-Veg' })}
-                      className="text-rose-600 focus:ring-rose-500 h-4 w-4"
-                    />
-                    <div className="flex items-center gap-1">
-                      <NonVegBadge />
-                      <span className="text-xs font-bold text-slate-700">Non-Veg</span>
-                    </div>
+                    <input type="radio" name="type" checked={newItem.type === 'Non-Veg'} onChange={() => setNewItem({ ...newItem, type: 'Non-Veg' })} className="text-rose-600 focus:ring-rose-500 h-4 w-4"/>
+                    <div className="flex items-center gap-1"><NonVegBadge /><span className="text-xs font-bold text-slate-700">Non-Veg</span></div>
                   </label>
                 </div>
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Image URL (Optional)</label>
-              <input
-                className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none text-xs font-semibold"
-                value={newItem.image}
-                onChange={e => setNewItem({ ...newItem, image: e.target.value })}
-                placeholder="https://..."
-              />
+            {/* Category preview */}
+            <div className={`rounded-xl h-14 flex items-center justify-center gap-3 ${catStyle.bg} border border-slate-200`}>
+              <span className="text-2xl">{catStyle.emoji}</span>
+              <span className="text-xs font-black text-slate-700 uppercase tracking-wide">{newItem.category} — {newItem.type}</span>
             </div>
 
             <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-extrabold py-3 rounded-lg transition-colors flex justify-center items-center gap-2 mt-2 uppercase tracking-wider text-xs cursor-pointer shadow-sm">
-              <Plus className="w-4 h-4 text-rose-400" /> Add Item
+              <Plus className="w-4 h-4 text-rose-400" /> Add Item to Menu
             </button>
           </form>
         </div>
 
+        {customCategories.length > 0 && (
+          <div className="mt-6 max-w-2xl bg-white rounded-xl border border-slate-200 p-4">
+            <h4 className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">Custom Categories ({customCategories.length})</h4>
+            <div className="flex flex-wrap gap-2">
+              {customCategories.map((cat, i) => (
+                <div key={i} className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-full text-xs font-bold text-slate-700">
+                  <span>{getCategoryStyle(cat).emoji}</span>
+                  <span>{cat}</span>
+                  <button
+                    onClick={() => {
+                      const updated = customCategories.filter((_, idx) => idx !== i);
+                      setCustomCategories(updated);
+                      localStorage.setItem('knife_pos_custom_categories', JSON.stringify(updated));
+                    }}
+                    className="text-rose-400 hover:text-rose-600 cursor-pointer ml-1 font-black text-xs"
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="mt-8">
           <h3 className="text-base font-extrabold mb-4 text-slate-700 uppercase tracking-wider">Current Menu Items ({menuItems.length})</h3>
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+
             <table className="w-full text-left border-collapse">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
@@ -1546,19 +1804,25 @@ const ReportsScreen = ({ orders, expenses, onPrintReport }) => {
   const monthlyExpensesTotal = monthlyExpenses.reduce((sum, e) => sum + e.amount, 0);
   const netProfit = monthlySalesTotal - monthlyExpensesTotal;
 
-  const getDailyRevenueTrend = () => {
+  const getDailyProfitLossTrend = () => {
     const daysInMonth = new Date(selectedMonth.split('-')[0], selectedMonth.split('-')[1], 0).getDate();
     const trend = [];
     for (let day = 1; day <= daysInMonth; day++) {
       const dayStr = String(day).padStart(2, '0');
       const dateKey = `${selectedMonth}-${dayStr}`;
+      
       const daySales = orders
         .filter(o => o.isodate === dateKey)
         .reduce((sum, o) => sum + o.total, 0);
-      
+
+      const dayExpenses = expenses
+        .filter(e => e.date === dateKey)
+        .reduce((sum, e) => sum + e.amount, 0);
+
       trend.push({
-        label: `${dayStr} ${new Date(selectedMonth + '-01').toLocaleString('en-US', { month: 'short' })}`,
-        value: daySales
+        label: dayStr,
+        sales: daySales,
+        expenses: dayExpenses
       });
     }
     return trend;
@@ -1629,7 +1893,7 @@ const ReportsScreen = ({ orders, expenses, onPrintReport }) => {
                 className="p-2 border border-slate-355 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50 cursor-pointer font-mono"
               />
             </div>
-            <div className="flex gap-3 w-full sm:w-auto">
+            <div className="flex gap-2 w-full sm:w-auto">
               <div className="relative flex-1 sm:w-64">
                 <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
                 <input
@@ -1641,10 +1905,21 @@ const ReportsScreen = ({ orders, expenses, onPrintReport }) => {
                 />
               </div>
               <button
+                onClick={() => {
+                  exportToCSV(`daily-report-${selectedDate}.csv`,
+                    ['Bill No','Time','Table','Customer','Payment Mode','Amount'],
+                    dailyOrders.map(o => [o.id, o.time, o.table, o.customerName || 'Guest', o.paymentMode || 'Cash', o.total])
+                  );
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shrink-0 shadow-sm"
+              >
+                📥 Excel
+              </button>
+              <button
                 onClick={() => onPrintReport('daily', { date: selectedDate, orders: dailyOrders })}
                 className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shrink-0 shadow-sm"
               >
-                <Printer className="w-4 h-4" /> Export Report
+                <Printer className="w-4 h-4" /> Print
               </button>
             </div>
           </div>
@@ -1724,18 +1999,34 @@ const ReportsScreen = ({ orders, expenses, onPrintReport }) => {
         <div className="space-y-6">
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center gap-4 select-none">
             <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Select Month:</span>
-            <input
-              type="month"
-              value={selectedMonth}
-              onChange={e => setSelectedMonth(e.target.value)}
-              className="p-2 border border-slate-355 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50 cursor-pointer font-mono"
-            />
-            <button
-              onClick={() => onPrintReport('monthly', { month: selectedMonth, orders: monthlyOrders, expenses: monthlyExpenses })}
-              className="ml-auto bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm"
-            >
-              <Printer className="w-4 h-4" /> Export Monthly Report
-            </button>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Month:</span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={e => setSelectedMonth(e.target.value)}
+                className="p-2 border border-slate-355 rounded-lg text-xs font-bold outline-none focus:ring-2 focus:ring-rose-500 bg-slate-50 cursor-pointer font-mono"
+              />
+            </div>
+            <div className="ml-auto flex gap-2">
+              <button
+                onClick={() => {
+                  exportToCSV(`monthly-report-${selectedMonth}.csv`,
+                    ['Bill No','Date','Table','Customer','Payment Mode','Amount'],
+                    monthlyOrders.map(o => [o.id, o.date, o.table, o.customerName || 'Guest', o.paymentMode || 'Cash', o.total])
+                  );
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm"
+              >
+                📥 Excel Export
+              </button>
+              <button
+                onClick={() => onPrintReport('monthly', { month: selectedMonth, orders: monthlyOrders, expenses: monthlyExpenses })}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm"
+              >
+                <Printer className="w-4 h-4" /> Print Report
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 select-none">
@@ -1775,51 +2066,102 @@ const ReportsScreen = ({ orders, expenses, onPrintReport }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 select-none">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs lg:col-span-2">
-              <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-wider mb-4 border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                <TrendingUp className="w-4 h-4 text-rose-650" /> Daily Revenue Trend ({selectedMonth})
-              </h3>
-              <div className="h-60 w-full flex items-center justify-center">
-                <SVGLineChart data={getDailyRevenueTrend()} />
+          {/* === PREMIUM ANALYTICS DASHBOARD === */}
+          <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-lg">
+            {/* Dark header */}
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-5 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center text-rose-400"><TrendingUp className="w-4 h-4"/></div>
+              <div>
+                <h3 className="font-black text-white text-sm uppercase tracking-wider">Analytics Dashboard</h3>
+                <p className="text-[10px] text-slate-400 font-bold">{selectedMonth} — Profit, Sales & Revenue Trends</p>
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-              <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-wider mb-4 border-b border-slate-100 pb-3 flex items-center gap-1.5">
-                <ShoppingBag className="w-4 h-4 text-[#ef4444]" /> Category Revenue Share
-              </h3>
-              <div className="h-60 flex items-center justify-center">
-                <SVGDonutChart data={getCategoryShare()} />
+            {/* KPI Row */}
+            <div className="grid grid-cols-3 divide-x divide-slate-200 bg-white">
+              <div className="p-5">
+                <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide block">Revenue</span>
+                <h3 className="text-xl font-black text-slate-800 mt-0.5 font-mono">₹{monthlySalesTotal.toLocaleString()}</h3>
+                <span className="text-[10px] text-emerald-600 font-bold">{monthlyOrders.length} bills</span>
+              </div>
+              <div className="p-5">
+                <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide block">Expenses</span>
+                <h3 className="text-xl font-black text-rose-600 mt-0.5 font-mono">₹{monthlyExpensesTotal.toLocaleString()}</h3>
+                <span className="text-[10px] text-rose-500 font-bold">Stock + Salary + Rent</span>
+              </div>
+              <div className={`p-5 ${netProfit >= 0 ? 'bg-emerald-50' : 'bg-rose-50'}`}>
+                <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wide block">Net Profit</span>
+                <h3 className={`text-xl font-black mt-0.5 font-mono ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {netProfit >= 0 ? '+' : ''}₹{netProfit.toLocaleString()}
+                </h3>
+                <span className={`text-[10px] font-bold ${netProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  Margin: {monthlySalesTotal ? `${Math.round((netProfit / monthlySalesTotal) * 100)}%` : '0%'}
+                </span>
               </div>
             </div>
-          </div>
 
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
-            <h3 className="font-extrabold text-slate-800 text-sm uppercase tracking-wider mb-4 border-b border-slate-100 pb-3">
-              🏆 Top 5 Best Selling Items (This Month)
-            </h3>
-            <div className="overflow-hidden border border-slate-250 rounded-xl">
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                  <tr>
-                    <th className="p-4">Rank</th>
-                    <th className="p-4">Item Name</th>
-                    <th className="p-4 text-center">Quantities Sold</th>
-                    <th className="p-4 text-right">Revenue (approx.)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs text-slate-700 font-bold">
-                  {getTopItems().map((item, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                      <td className="p-4 font-black text-rose-600">#{idx + 1}</td>
-                      <td className="p-4 font-bold text-slate-800 text-sm">{item.name}</td>
-                      <td className="p-4 text-center font-black text-slate-750 font-mono">{item.quantity}</td>
-                      <td className="p-4 text-right font-black text-slate-900 font-mono font-mono">₹{item.revenue.toLocaleString()}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            {/* Charts Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 bg-white border-t border-slate-200">
+              {/* Dual Trend Chart - Daily Sales vs Daily Expenses */}
+              <div className="lg:col-span-2 p-5 bg-slate-50/50">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-black text-slate-700 uppercase tracking-wide">📊 Sales vs Expenses P&L Trend</span>
+                  <span className="text-[9px] text-slate-400 font-bold uppercase">Hover dots for exact values</span>
+                </div>
+                <div className="h-52 w-full">
+                  <SVGDualTrendChart data={getDailyProfitLossTrend()}/>
+                </div>
+              </div>
+              {/* Payment Mode Pie */}
+              <div className="p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-black text-slate-700 uppercase tracking-wide">💳 Payment Split</span>
+                </div>
+                <div className="h-52 flex items-center justify-center">
+                  <SVGPaymentPieChart
+                    cash={monthlyOrders.filter(o => o.paymentMode === 'Cash' || !o.paymentMode).reduce((s,o) => s + o.total, 0)}
+                    upi={monthlyOrders.filter(o => o.paymentMode === 'UPI').reduce((s,o) => s + o.total, 0)}
+                    card={monthlyOrders.filter(o => o.paymentMode === 'Card' || o.paymentMode === 'Card/Bank').reduce((s,o) => s + o.total, 0)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Category + Top Items Row */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 bg-white border-t border-slate-200">
+              {/* Category Donut */}
+              <div className="p-5">
+                <span className="text-xs font-black text-slate-700 uppercase tracking-wide block mb-3">🍽️ Category Revenue Share</span>
+                <div className="h-48 flex items-center justify-center">
+                  <SVGDonutChart data={getCategoryShare()}/>
+                </div>
+              </div>
+              {/* Top Items Leaderboard */}
+              <div className="p-5">
+                <span className="text-xs font-black text-slate-700 uppercase tracking-wide block mb-3">🏆 Top Selling Items</span>
+                <div className="space-y-3">
+                  {getTopItems().slice(0, 5).map((item, idx) => {
+                    const maxQ = getTopItems()[0]?.quantity || 1;
+                    const pct = Math.round((item.quantity / maxQ) * 100);
+                    const colors = ['bg-rose-500','bg-orange-500','bg-amber-500','bg-blue-500','bg-violet-500'];
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex justify-between text-xs">
+                          <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                            <span className={`w-4 h-4 rounded-full ${colors[idx]} text-white flex items-center justify-center text-[9px] font-black shrink-0`}>{idx+1}</span>
+                            {item.name}
+                          </span>
+                          <span className="font-black text-slate-500 font-mono">{item.quantity}x · ₹{item.revenue.toLocaleString()}</span>
+                        </div>
+                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${colors[idx]} transition-all duration-500`} style={{width: `${pct}%`}}></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {getTopItems().length === 0 && <div className="text-xs text-slate-400 font-bold py-8 text-center">No sales data for this month</div>}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1872,12 +2214,26 @@ const ExpensesScreen = ({ expenses, orders, addExpense, deleteExpense }) => {
         <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
           <IndianRupee className="text-rose-500 w-7 h-7" /> Expense Register & Ledger
         </h2>
-        <button
-          onClick={() => setShowModal(true)}
-          className="bg-slate-900 hover:bg-slate-850 text-white font-extrabold px-4 py-2.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm active:scale-95"
-        >
-          <Plus className="w-4 h-4 text-rose-450" /> Log Expense
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              exportToCSV(
+                `expenses-${filterCat}-${new Date().toISOString().split('T')[0]}.csv`,
+                ['Date', 'Expense ID', 'Title', 'Category', 'Amount', 'Notes'],
+                filteredExpenses.map(exp => [exp.date, exp.id, exp.title, exp.category, exp.amount, exp.notes])
+              );
+            }}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-2.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm active:scale-95"
+          >
+            📥 Excel Export
+          </button>
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-slate-900 hover:bg-slate-850 text-white font-extrabold px-4 py-2.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm active:scale-95"
+          >
+            <Plus className="w-4 h-4 text-rose-450" /> Log Expense
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -2054,11 +2410,14 @@ const ExpensesScreen = ({ expenses, orders, addExpense, deleteExpense }) => {
 };
 
 // --- Staff Screen Component ---
-const StaffScreen = ({ staff, addStaff, removeStaff, attendance, saveAttendance, addExpense, getStorageKey }) => {
+const StaffScreen = ({ staff, addStaff, removeStaff, updateStaff, attendance, saveAttendance, addExpense, getStorageKey }) => {
   const [subTab, setSubTab] = useState('list');
   const [showModal, setShowModal] = useState(false);
   const [staffForm, setStaffForm] = useState({ name: '', role: 'Kitchen Helper', salary: '', contact: '', joined: new Date().toISOString().split('T')[0] });
   
+  const [editingMember, setEditingMember] = useState(null);
+  const [editForm, setEditForm] = useState({ name: '', role: 'Kitchen Helper', salary: '', contact: '', joined: '', status: 'Active' });
+
   const [attendanceMonth, setAttendanceMonth] = useState(new Date().toISOString().substring(0, 7));
   const [payrollMonth, setPayrollMonth] = useState(new Date().toISOString().substring(0, 7));
   
@@ -2082,6 +2441,16 @@ const StaffScreen = ({ staff, addStaff, removeStaff, attendance, saveAttendance,
     });
     setStaffForm({ name: '', role: 'Kitchen Helper', salary: '', contact: '', joined: new Date().toISOString().split('T')[0] });
     setShowModal(false);
+  };
+
+  const handleUpdateStaffSubmit = (e) => {
+    e.preventDefault();
+    if (!editForm.name || !editForm.salary) return;
+    updateStaff(editingMember.id || editingMember._id, {
+      ...editForm,
+      salary: Number(editForm.salary)
+    });
+    setEditingMember(null);
   };
 
   const getDaysInMonth = (monthString) => {
@@ -2204,19 +2573,40 @@ const StaffScreen = ({ staff, addStaff, removeStaff, attendance, saveAttendance,
         <div className="space-y-6">
           <div className="flex justify-between items-center bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
             <span className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Active Employees: {staff.length}</span>
-            <button
-              onClick={() => setShowModal(true)}
-              className="bg-slate-900 hover:bg-slate-850 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm active:scale-95"
-            >
-              <Plus className="w-4 h-4" /> Add Staff Member
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => {
+                  exportToCSV(
+                    `staff-directory-${new Date().toISOString().split('T')[0]}.csv`,
+                    ['Employee ID', 'Name', 'Role', 'Salary', 'Contact', 'Status', 'Joined Date'],
+                    staff.map(member => [member.id, member.name, member.role, member.salary, member.contact, member.status, member.joined])
+                  );
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-2.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm active:scale-95"
+              >
+                📥 Excel Export
+              </button>
+              <button
+                onClick={() => setShowModal(true)}
+                className="bg-slate-900 hover:bg-slate-850 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm active:scale-95"
+              >
+                <Plus className="w-4 h-4" /> Add Staff Member
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {staff.map(member => (
               <div key={member.id} className="bg-white rounded-2xl border border-slate-250 shadow-xs p-5 flex flex-col justify-between relative overflow-hidden">
-                <div className="absolute top-4 right-4 bg-red-50 text-red-700 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-red-100">
-                  {member.role}
+                <div className="absolute top-4 right-4 flex gap-1.5 items-center">
+                  {member.status === 'Inactive' && (
+                    <span className="bg-slate-150 text-slate-500 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-slate-200 shadow-xs">
+                      Inactive
+                    </span>
+                  )}
+                  <div className="bg-red-50 text-red-700 px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider border border-red-100">
+                    {member.role}
+                  </div>
                 </div>
                 <div>
                   <h4 className="text-lg font-black text-slate-850">{member.name}</h4>
@@ -2235,6 +2625,22 @@ const StaffScreen = ({ staff, addStaff, removeStaff, attendance, saveAttendance,
                 </div>
 
                 <div className="mt-6 pt-3 border-t border-slate-100 flex justify-between">
+                  <button
+                    onClick={() => {
+                      setEditingMember(member);
+                      setEditForm({
+                        name: member.name,
+                        role: member.role,
+                        salary: String(member.salary),
+                        contact: member.contact || '',
+                        joined: member.joined || '',
+                        status: member.status || 'Active'
+                      });
+                    }}
+                    className="text-xs font-bold text-slate-600 hover:text-slate-900 uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    ✏️ Edit Profile
+                  </button>
                   <button
                     onClick={() => removeStaff(member.id)}
                     className="text-xs font-bold text-rose-500 hover:text-rose-700 uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-colors"
@@ -2327,6 +2733,21 @@ const StaffScreen = ({ staff, addStaff, removeStaff, attendance, saveAttendance,
           <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-wider text-slate-700">Monthly Salary Statement ({payrollMonth})</span>
+              <button
+                onClick={() => {
+                  const rows = staff.map(member => {
+                    const p = calculatePayroll(member);
+                    return [member.id, member.name, member.role, member.salary, p.present, p.absent, p.half, p.leave, p.deductions, p.netPayout, p.isPaid ? 'Paid' : 'Pending', p.isPaid ? p.paidInfo?.mode : '', p.isPaid ? p.paidInfo?.date : ''];
+                  });
+                  exportToCSV(`payroll-${payrollMonth}.csv`,
+                    ['Staff ID','Name','Role','Base Salary','Present','Absent','Half','Leave','Deductions','Net Payable','Status','Payment Mode','Payment Date'],
+                    rows
+                  );
+                }}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold px-4 py-2 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer uppercase tracking-wider shadow-sm"
+              >
+                📥 Export Excel
+              </button>
             </div>
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-400 uppercase tracking-wider">
@@ -2462,6 +2883,100 @@ const StaffScreen = ({ staff, addStaff, removeStaff, attendance, saveAttendance,
 
               <button type="submit" className="w-full bg-slate-900 hover:bg-slate-850 text-white font-extrabold py-3.5 rounded-xl transition-colors uppercase tracking-wider text-xs shadow-md">
                 Register employee
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editingMember && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs select-none">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-100 overflow-hidden font-sans">
+            <div className="p-4 bg-slate-950 text-white flex justify-between items-center">
+              <h3 className="font-extrabold text-sm uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-4.5 h-4.5 text-rose-450" /> Edit Employee Profile
+              </h3>
+              <button onClick={() => setEditingMember(null)} className="hover:text-rose-455 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateStaffSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Full Name</label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.name}
+                  onChange={e => setEditForm({ ...editForm, name: e.target.value })}
+                  placeholder="e.g. Hari Mishra"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold text-xs"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Monthly Salary (₹)</label>
+                  <input
+                    type="number"
+                    required
+                    value={editForm.salary}
+                    onChange={e => setEditForm({ ...editForm, salary: e.target.value })}
+                    placeholder="₹15000"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-black text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Role</label>
+                  <select
+                    value={editForm.role}
+                    onChange={e => setEditForm({ ...editForm, role: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-355 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-semibold text-xs cursor-pointer font-bold"
+                  >
+                    <option>Head Chef</option>
+                    <option>Kitchen Helper</option>
+                    <option>Waiter</option>
+                    <option>Manager</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Contact Number</label>
+                  <input
+                    type="tel"
+                    value={editForm.contact}
+                    onChange={e => setEditForm({ ...editForm, contact: e.target.value })}
+                    placeholder="10-digit number"
+                    className="w-full p-2.5 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Date of Joining</label>
+                  <input
+                    type="date"
+                    required
+                    value={editForm.joined}
+                    onChange={e => setEditForm({ ...editForm, joined: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-350 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-bold text-xs font-mono cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wide">Status</label>
+                <select
+                  value={editForm.status}
+                  onChange={e => setEditForm({ ...editForm, status: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-355 rounded-lg focus:ring-2 focus:ring-rose-500 outline-none font-semibold text-xs cursor-pointer font-bold"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-850 text-white font-extrabold py-3.5 rounded-xl transition-colors uppercase tracking-wider text-xs shadow-md">
+                Save changes
               </button>
             </form>
           </div>
@@ -3167,7 +3682,7 @@ function POSWorkspace({ restaurant, onExit, user }) {
   const [showChat, setShowChat] = useState(false);
   const [isChatVerified, setIsChatVerified] = useState(false);
   const [chatMessages, setChatMessages] = useState([
-    { sender: 'robert', message: "Hello! I am Robert, your Knife Support assistant. Please enter your Unique Restaurant ID to connect to support.", timestamp: new Date().toISOString() }
+    { sender: 'support', message: "Hello! Welcome to Knife POS Support. Please enter your numerical Unique Support ID to connect to our support team.", timestamp: new Date().toISOString() }
   ]);
   const [inputId, setInputId] = useState('');
   const [inputMsg, setInputMsg] = useState('');
@@ -3456,15 +3971,15 @@ function POSWorkspace({ restaurant, onExit, user }) {
     e.preventDefault();
     if (!inputId.trim()) return;
     
-    const submittedId = inputId.trim().toLowerCase();
-    const currentId = restaurant.id.toLowerCase();
+    const submittedId = inputId.trim();
+    const currentUniqueId = String(restaurant.uniqueId || '');
     
     // Add user message to state
     const userMsg = { sender: 'restaurant', message: inputId.trim(), timestamp: new Date().toISOString() };
     setChatMessages(prev => [...prev, userMsg]);
     
-    if (submittedId === currentId) {
-      const successMsg = { sender: 'robert', message: "ID Verified! Connecting you to Knife POS Support...", timestamp: new Date().toISOString() };
+    if (submittedId === currentUniqueId) {
+      const successMsg = { sender: 'support', message: "Support ID Verified! Connecting you to Knife POS Support...", timestamp: new Date().toISOString() };
       setChatMessages(prev => [...prev, successMsg]);
       setIsChatVerified(true);
       
@@ -3489,7 +4004,7 @@ function POSWorkspace({ restaurant, onExit, user }) {
         console.error("Error loading chat history:", err);
       }
     } else {
-      const failMsg = { sender: 'robert', message: "Invalid Restaurant ID. Please check your Unique ID and try again.", timestamp: new Date().toISOString() };
+      const failMsg = { sender: 'support', message: "Invalid Support ID. Please check your numerical Unique ID and try again.", timestamp: new Date().toISOString() };
       setChatMessages(prev => [...prev, failMsg]);
     }
     setInputId('');
@@ -3879,6 +4394,26 @@ function POSWorkspace({ restaurant, onExit, user }) {
     }
   };
 
+  const updateStaff = async (staffId, updatedData) => {
+    setStaff(prev => prev.map(s => (s.id === staffId || s._id === staffId) ? { ...s, ...updatedData } : s));
+    try {
+      const res = await fetch(`${API_BASE}/api/staff/${staffId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedData)
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        setStaff(prev => prev.map(s => (s.id === staffId || s._id === staffId) ? saved : s));
+      } else {
+        throw new Error("Failed to update staff member on server");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update staff member in database!");
+    }
+  };
+
   const saveAttendance = (staffId, dateKey, status) => {
     setAttendance(prev => ({
       ...prev,
@@ -4094,6 +4629,7 @@ function POSWorkspace({ restaurant, onExit, user }) {
               staff={staff} 
               addStaff={addStaff} 
               removeStaff={removeStaff} 
+              updateStaff={updateStaff}
               attendance={attendance} 
               saveAttendance={saveAttendance}
               addExpense={addExpense}
@@ -4649,11 +5185,8 @@ function POSWorkspace({ restaurant, onExit, user }) {
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-500 relative">
                     <Headphones className="w-4.5 h-4.5" />
-                    <span className="absolute bottom-0 right-0 w-2 h-2 rounded-full bg-emerald-500 border border-slate-950"></span>
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-xs uppercase tracking-wide">Robert (Knife Support)</h3>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Online • Verification Assistant</p>
+                                        <h3 className="font-extrabold text-xs uppercase tracking-wide">Knife POS Support</h3>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase mt-0.5">Online • Support Team</p>
                   </div>
                 </div>
                 <button 
@@ -4663,12 +5196,12 @@ function POSWorkspace({ restaurant, onExit, user }) {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-
+ 
               {/* Chat Message Stream */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3.5 bg-slate-955/40 select-text">
                 {chatMessages.map((msg, index) => {
                   const isUser = msg.sender === 'restaurant';
-                  const isRobert = msg.sender === 'robert';
+                  const isRobert = msg.sender === 'robert' || msg.sender === 'support';
                   return (
                     <div key={index} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[80%] rounded-2xl p-3 text-xs font-semibold leading-relaxed shadow-sm ${
@@ -4688,14 +5221,14 @@ function POSWorkspace({ restaurant, onExit, user }) {
                 })}
                 <div ref={messagesEndRef} />
               </div>
-
+ 
               {/* Chat Input Area */}
               <div className="p-3 bg-slate-955 border-t border-slate-850">
                 {!isChatVerified ? (
                   <form onSubmit={handleVerifyChat} className="flex gap-2">
                     <input 
-                      type="text"
-                      placeholder="Enter Unique Restaurant ID..."
+                      type="text" 
+                      placeholder="Enter numerical Support ID..." 
                       className="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 font-semibold focus:outline-none focus:border-rose-500 transition-all font-mono"
                       value={inputId}
                       onChange={e => setInputId(e.target.value)}
@@ -4785,7 +5318,7 @@ const LandingPage = ({ onEnterLogin }) => {
   };
 
   return (
-    <div className="bg-[#0b0f19] min-h-screen text-slate-100 font-sans selection:bg-rose-500 selection:text-white relative overflow-hidden select-none text-left">
+    <div className="landing-page-root bg-[#0b0f19] min-h-screen text-slate-100 font-sans selection:bg-rose-500 selection:text-white relative overflow-x-hidden select-none text-left">
       {/* Background glow effects */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-rose-600/5 rounded-full blur-3xl pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#ef4444]/5 rounded-full blur-3xl pointer-events-none"></div>
@@ -5172,7 +5705,7 @@ const LandingPage = ({ onEnterLogin }) => {
               <p>We do not lease, rent, or sell restaurant customer profiles, sales reports, or invoice records to third parties for advertisement or data mining.</p>
               
               <h4 className="font-extrabold text-white text-xs mt-3 uppercase tracking-wider text-rose-400">3. Support Transcripts</h4>
-              <p>Live conversations with Knife support agents or chatbot Robert are archived solely for verification and resolving subscription inquiries.</p>
+              <p>Live conversations with Knife support agents are archived solely for verification and resolving subscription inquiries.</p>
             </div>
             <div className="border-t border-slate-800 pt-4 mt-4 text-right">
               <button onClick={() => setShowPrivacy(false)} className="bg-rose-600 hover:bg-rose-550 text-white font-extrabold px-6 py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all cursor-pointer">
@@ -5632,7 +6165,7 @@ function App() {
 
   const [currentRestaurant, setCurrentRestaurant] = useState(null);
   const [showOnboardModal, setShowOnboardModal] = useState(false);
-  const [onboardForm, setOnboardForm] = useState({ name: '', owner: '', cuisine: 'Multi-Cuisine', currency: '₹', taxRate: '5' });
+  const [onboardForm, setOnboardForm] = useState({ name: '', owner: '', phone: '', cuisine: 'Multi-Cuisine', currency: '₹', taxRate: '5' });
   const [selectedDetailsRestaurant, setSelectedDetailsRestaurant] = useState(null);
 
   // Admin Portal Navigation Tabs State
@@ -5643,6 +6176,7 @@ function App() {
   const [selectedChatRestaurantId, setSelectedChatRestaurantId] = useState('');
   const [adminChatMessages, setAdminChatMessages] = useState([]);
   const [adminReplyMsg, setAdminReplyMsg] = useState('');
+  const [unreadChannels, setUnreadChannels] = useState([]);
   
   const adminMessagesEndRef = React.useRef(null);
   useEffect(() => {
@@ -5689,13 +6223,22 @@ function App() {
             return [...prev, { ...newMsg, timestamp: newMsg.createdAt }];
           });
         }
+        
+        if (newMsg.sender === 'restaurant') {
+          if (selectedChatRestaurantId !== newMsg.restaurantId || adminTab !== 'support') {
+            setUnreadChannels(prev => {
+              if (prev.includes(newMsg.restaurantId)) return prev;
+              return [...prev, newMsg.restaurantId];
+            });
+          }
+        }
       });
       
       return () => {
         s.disconnect();
       };
     }
-  }, [user, selectedChatRestaurantId]);
+  }, [user, selectedChatRestaurantId, adminTab]);
 
   // Fetch inquiries from backend
   useEffect(() => {
@@ -5877,7 +6420,7 @@ function App() {
 
   const handleOnboardSubmit = async (e) => {
     e.preventDefault();
-    if (!onboardForm.name || !onboardForm.owner) {
+    if (!onboardForm.name || !onboardForm.owner || !onboardForm.phone) {
       alert('Please fill out all required fields!');
       return;
     }
@@ -5896,6 +6439,7 @@ function App() {
       id: newId,
       name: onboardForm.name,
       owner: onboardForm.owner,
+      phone: onboardForm.phone,
       cuisine: onboardForm.cuisine,
       status: 'Active',
       currency: onboardForm.currency,
@@ -5914,7 +6458,7 @@ function App() {
         const savedRestaurant = await res.json();
         setRestaurants(prev => [...prev, savedRestaurant]);
         setNewOutletCredentials({ name: savedRestaurant.name, username: generatedUsername, password: generatedPassword });
-        setOnboardForm({ name: '', owner: '', cuisine: 'Multi-Cuisine', currency: '₹', taxRate: '5' });
+        setOnboardForm({ name: '', owner: '', phone: '', cuisine: 'Multi-Cuisine', currency: '₹', taxRate: '5' });
         setShowOnboardModal(false);
       } else {
         const errData = await res.json();
@@ -5937,7 +6481,7 @@ function App() {
   // 2. If logged in but no active restaurant selected, show Manager Portal
   if (!currentRestaurant) {
     return (
-      <div className="bg-[#070b13] min-h-screen font-sans text-slate-100 p-4 md:p-10 select-none pb-24 relative overflow-hidden">
+      <div className="admin-portal-root bg-[#070b13] min-h-screen font-sans text-slate-100 p-4 md:p-10 select-none pb-8 relative overflow-x-hidden">
         {/* Glowing backdrop circles */}
         <div className="absolute top-0 left-1/4 w-80 md:w-[450px] h-80 md:h-[450px] bg-rose-600/5 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-10 right-1/4 w-80 md:w-[450px] h-80 md:h-[450px] bg-red-500/5 rounded-full blur-3xl pointer-events-none"></div>
@@ -6018,10 +6562,15 @@ function App() {
               Leads Tracker
             </button>
             <button 
-              onClick={() => setAdminTab('support')}
-              className={`pb-2 transition-all cursor-pointer border-b-2 ${adminTab === 'support' ? 'text-rose-500 border-rose-500 font-extrabold' : 'border-transparent hover:text-white'}`}
+              onClick={() => { setAdminTab('support'); if (selectedChatRestaurantId) { setUnreadChannels(prev => prev.filter(id => id !== selectedChatRestaurantId)); } }}
+              className={`pb-2 transition-all cursor-pointer border-b-2 ${adminTab === 'support' ? 'text-rose-500 border-rose-500 font-extrabold' : 'border-transparent hover:text-white'} flex items-center gap-1.5`}
             >
               Support Hub
+              {unreadChannels.length > 0 && (
+                <span className="bg-rose-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full leading-none min-w-[14px] text-center">
+                  {unreadChannels.length}
+                </span>
+              )}
             </button>
             <button 
               onClick={() => setAdminTab('complaints')}
@@ -6052,7 +6601,7 @@ function App() {
                   <div 
                     key={r.id}
                     onClick={() => setSelectedDetailsRestaurant(r)}
-                    className={`bg-slate-900/35 backdrop-blur-xl rounded-3xl border transition-all duration-300 p-6 flex flex-col justify-between h-60 relative overflow-hidden group hover:-translate-y-1 hover:shadow-2xl hover:shadow-rose-955/5 cursor-pointer ${
+                    className={`restaurant-card bg-slate-900/35 backdrop-blur-xl rounded-3xl border transition-all duration-300 p-6 flex flex-col justify-between min-h-[15rem] relative overflow-hidden group hover:-translate-y-1 hover:shadow-2xl hover:shadow-rose-955/5 cursor-pointer ${
                       r.status === 'Active' 
                         ? 'border-slate-800/80 hover:border-rose-600/80' 
                         : 'border-rose-955/40 opacity-70 bg-slate-950/30'
@@ -6232,19 +6781,20 @@ function App() {
           )}
 
           {adminTab === 'support' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[550px] animate-in fade-in duration-200">
-              <div className="lg:col-span-1 bg-slate-900/35 border border-slate-800/80 rounded-3xl flex flex-col overflow-hidden">
-                <div className="p-4 bg-slate-950 border-b border-slate-850 flex items-center justify-between">
+            <div className="admin-support-hub grid grid-cols-1 lg:grid-cols-4 gap-6 lg:h-[550px] animate-in fade-in duration-200">
+              <div className="lg:col-span-1 bg-slate-900/35 border border-slate-800/80 rounded-3xl flex flex-col overflow-hidden min-h-[200px] lg:min-h-0">
+                <div className="p-4 bg-slate-955 border-b border-slate-850 flex items-center justify-between">
                   <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Outlet Channels</h4>
                   <span className="text-[9px] bg-rose-500/10 text-rose-500 border border-rose-500/20 px-2 py-0.5 rounded-md font-bold uppercase">Socket Active</span>
                 </div>
-                <div className="flex-1 overflow-y-auto divide-y divide-slate-850 p-2">
+                <div className="flex-1 overflow-y-auto divide-y divide-slate-850 p-2 max-h-[180px] lg:max-h-none">
                   {restaurants.map(rest => {
                     const isSelected = selectedChatRestaurantId === rest.id;
+                    const isUnread = unreadChannels.includes(rest.id);
                     return (
                       <div 
                         key={rest.id}
-                        onClick={() => setSelectedChatRestaurantId(rest.id)}
+                        onClick={() => { setSelectedChatRestaurantId(rest.id); setUnreadChannels(prev => prev.filter(id => id !== rest.id)); }}
                         className={`p-3.5 rounded-2xl flex items-center gap-3 cursor-pointer transition-all duration-200 ${
                           isSelected 
                             ? 'bg-rose-600 text-white shadow-md shadow-rose-900/25' 
@@ -6253,12 +6803,23 @@ function App() {
                       >
                         <div className={`w-8 h-8 rounded-full flex items-center justify-center border shrink-0 ${
                           isSelected ? 'bg-white/10 border-white/20 text-white' : 'bg-slate-955 border-slate-800 text-slate-400'
-                        }`}>
+                        } relative`}>
                           <Store className="w-4 h-4" />
+                          {isUnread && (
+                            <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500 border border-slate-900"></span>
+                            </span>
+                          )}
                         </div>
-                        <div className="truncate flex-1">
-                          <span className={`block text-xs font-black truncate leading-tight ${isSelected ? 'text-white' : 'text-slate-200'}`}>{rest.name}</span>
-                          <span className={`block text-[9px] mt-0.5 font-bold uppercase tracking-wider leading-none ${isSelected ? 'text-rose-200' : 'text-slate-500 font-mono'}`}>ID: {rest.id}</span>
+                        <div className="truncate flex-1 flex justify-between items-center">
+                          <div className="truncate">
+                            <span className={`block text-xs font-black truncate leading-tight ${isSelected ? 'text-white' : 'text-slate-200'}`}>{rest.name}</span>
+                            <span className={`block text-[9px] mt-0.5 font-bold uppercase tracking-wider leading-none ${isSelected ? 'text-rose-200' : 'text-slate-500 font-mono'}`}>Support ID: {rest.uniqueId || 'N/A'}</span>
+                          </div>
+                          {isUnread && (
+                            <span className="bg-rose-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wider animate-pulse shrink-0">New</span>
+                          )}
                         </div>
                       </div>
                     );
@@ -6266,13 +6827,13 @@ function App() {
                 </div>
               </div>
 
-              <div className="lg:col-span-2 bg-slate-900/35 border border-slate-800/80 rounded-3xl flex flex-col overflow-hidden">
+              <div className={selectedChatRestaurantId ? "lg:col-span-2 bg-slate-900/35 border border-slate-800/80 rounded-3xl flex flex-col overflow-hidden min-h-[350px] lg:min-h-0" : "lg:col-span-3 bg-slate-900/35 border border-slate-800/80 rounded-3xl flex flex-col overflow-hidden min-h-[200px] lg:min-h-0"}>
                 {selectedChatRestaurantId ? (
                   (() => {
                     const currentChatRest = restaurants.find(r => r.id === selectedChatRestaurantId);
                     return (
                       <div className="flex flex-col h-full overflow-hidden text-left">
-                        <div className="p-4 bg-slate-950 border-b border-slate-850 flex justify-between items-center select-none">
+                        <div className="p-4 bg-slate-955 border-b border-slate-850 flex justify-between items-center select-none">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-full bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-500">
                               <Store className="w-4 h-4" />
@@ -6283,7 +6844,7 @@ function App() {
                             </div>
                           </div>
                           <span className="text-[9px] font-bold font-mono text-slate-550 bg-slate-900 px-2.5 py-1 rounded-md border border-slate-800">
-                            ID: {selectedChatRestaurantId}
+                            Support ID: {currentChatRest ? currentChatRest.uniqueId : 'N/A'}
                           </span>
                         </div>
 
@@ -6295,7 +6856,7 @@ function App() {
                           ) : (
                             adminChatMessages.map((msg, index) => {
                               const isAdmin = msg.sender === 'admin';
-                              const isRobert = msg.sender === 'robert';
+                              const isRobert = msg.sender === 'robert' || msg.sender === 'support';
                               return (
                                 <div key={index} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
                                   <div className={`max-w-[75%] rounded-2xl p-3 text-xs font-semibold leading-relaxed shadow-sm ${
@@ -6342,6 +6903,57 @@ function App() {
                   </div>
                 )}
               </div>
+
+              {selectedChatRestaurantId && (() => {
+                const currentChatRest = restaurants.find(r => r.id === selectedChatRestaurantId);
+                if (!currentChatRest) return null;
+                return (
+                  <div className="lg:col-span-1 bg-slate-900/35 border border-slate-800/80 rounded-3xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300">
+                    <div className="p-4 bg-slate-955 border-b border-slate-850">
+                      <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Outlet Profile</h4>
+                    </div>
+                    <div className="p-4 flex-1 overflow-y-auto space-y-4 text-xs font-bold text-slate-350 select-text">
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Restaurant Name</span>
+                        <span className="text-white text-xs font-black">{currentChatRest.name}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Unique Support ID</span>
+                        <span className="text-rose-455 font-mono text-sm font-black">{currentChatRest.uniqueId || 'N/A'}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Owner Name</span>
+                        <span className="text-slate-200">{currentChatRest.owner}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Phone Number</span>
+                        <span className="text-slate-200 font-mono">{currentChatRest.phone || '9861234567'}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Cuisine Category</span>
+                        <span className="text-slate-200">{currentChatRest.cuisine}</span>
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Status</span>
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-black uppercase inline-block ${currentChatRest.status === 'Active' ? 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-500 border border-rose-500/20'}`}>{currentChatRest.status}</span>
+                      </div>
+                      <div className="border-t border-slate-800/80 pt-3 space-y-2">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider block">Login Credentials</span>
+                        <div className="bg-slate-955/50 p-2.5 rounded-xl border border-slate-855 space-y-1 font-mono text-[10px]">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Username:</span>
+                            <span className="text-slate-305 font-bold">{currentChatRest.username}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Password:</span>
+                            <span className="text-slate-305 font-bold">{currentChatRest.password}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -6463,6 +7075,18 @@ function App() {
                     className="w-full bg-slate-955 border border-slate-855 text-white rounded-xl px-4 py-3 font-semibold outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all"
                     value={onboardForm.owner}
                     onChange={e => setOnboardForm(prev => ({ ...prev, owner: e.target.value }))}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Owner Phone Number *</label>
+                  <input 
+                    type="text" 
+                    required 
+                    placeholder="e.g. 9861234567" 
+                    className="w-full bg-slate-955 border border-slate-855 text-white rounded-xl px-4 py-3 font-semibold outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 transition-all"
+                    value={onboardForm.phone || ''}
+                    onChange={e => setOnboardForm(prev => ({ ...prev, phone: e.target.value }))}
                   />
                 </div>
 

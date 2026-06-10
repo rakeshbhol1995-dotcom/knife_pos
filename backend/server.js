@@ -161,6 +161,22 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Helper to generate unique 6-digit support ID
+async function generateUniqueId() {
+  let uniqueId;
+  let isUnique = false;
+  let attempts = 0;
+  while (!isUnique && attempts < 100) {
+    uniqueId = Math.floor(100000 + Math.random() * 900000); // 6-digit number
+    const dup = await Restaurant.findOne({ uniqueId });
+    if (!dup) {
+      isUnique = true;
+    }
+    attempts++;
+  }
+  return uniqueId;
+}
+
 // 2. Restaurant / Outlet Routes
 app.get('/api/restaurants', async (req, res) => {
   try {
@@ -173,7 +189,7 @@ app.get('/api/restaurants', async (req, res) => {
 
 app.post('/api/restaurants', async (req, res) => {
   try {
-    const { id, name, owner, cuisine, currency, taxRate, username, password } = req.body;
+    const { id, name, owner, phone, cuisine, currency, taxRate, username, password } = req.body;
     
     // Check if duplicate slug exists
     const duplicate = await Restaurant.findOne({ id });
@@ -181,12 +197,15 @@ app.post('/api/restaurants', async (req, res) => {
       return res.status(400).json({ message: 'Restaurant name is too similar to an existing one.' });
     }
 
+    const uniqueId = await generateUniqueId();
     const onboardedAt = new Date();
     const expiryDate = new Date();
     expiryDate.setFullYear(onboardedAt.getFullYear() + 1);
 
     const newRest = new Restaurant({
       id,
+      uniqueId,
+      phone,
       name,
       owner,
       cuisine: cuisine || 'Multi-Cuisine',
@@ -408,6 +427,23 @@ app.delete('/api/staff/:id', async (req, res) => {
   }
 });
 
+app.put('/api/staff/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updateData = req.body;
+    let updated = await Staff.findOneAndUpdate({ id }, updateData, { new: true });
+    if (!updated && mongoose.Types.ObjectId.isValid(id)) {
+      updated = await Staff.findByIdAndUpdate(id, updateData, { new: true });
+    }
+    if (!updated) {
+      return res.status(404).json({ message: 'Staff member not found' });
+    }
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 // 7. Contact / Inquiry Route (Book a Call)
 app.post('/api/contact', async (req, res) => {
   try {
@@ -499,14 +535,28 @@ async function seedDatabase() {
   try {
     // 1. Check if Urmi Kitchen default exists
     const urmi = await Restaurant.findOne({ id: 'urmi_kitchen' });
-    if (urmi && !urmi.expiryDate) {
-      console.log('Migrating default Urmi Kitchen trial dates...');
-      const onboardedAt = urmi.createdAt || new Date();
-      const expiryDate = new Date(onboardedAt);
-      expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-      urmi.onboardedAt = onboardedAt;
-      urmi.expiryDate = expiryDate;
-      await urmi.save();
+    if (urmi) {
+      let updated = false;
+      if (!urmi.expiryDate) {
+        console.log('Migrating default Urmi Kitchen trial dates...');
+        const onboardedAt = urmi.createdAt || new Date();
+        const expiryDate = new Date(onboardedAt);
+        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
+        urmi.onboardedAt = onboardedAt;
+        urmi.expiryDate = expiryDate;
+        updated = true;
+      }
+      if (!urmi.uniqueId) {
+        urmi.uniqueId = 100101;
+        updated = true;
+      }
+      if (!urmi.phone) {
+        urmi.phone = '9861234567';
+        updated = true;
+      }
+      if (updated) {
+        await urmi.save();
+      }
     }
 
     if (!urmi) {
@@ -517,6 +567,8 @@ async function seedDatabase() {
 
       const defaultUrmi = new Restaurant({
         id: 'urmi_kitchen',
+        uniqueId: 100101,
+        phone: '9861234567',
         name: 'Urmi Kitchen',
         owner: 'Bunty',
         cuisine: 'North Indian & Biryani',
@@ -607,9 +659,34 @@ async function seedDatabase() {
         }
       ];
       await Order.insertMany(seedOrders);
-
-      console.log('Database seeding completed!');
     }
+
+    // Ensure all existing restaurants have a unique numerical ID and default phone number if missing
+    const allRests = await Restaurant.find();
+    for (const rest of allRests) {
+      let updated = false;
+      if (!rest.uniqueId) {
+        let uniqueId;
+        let isUnique = false;
+        while (!isUnique) {
+          uniqueId = Math.floor(100000 + Math.random() * 900000);
+          const dup = await Restaurant.findOne({ uniqueId });
+          if (!dup) isUnique = true;
+        }
+        rest.uniqueId = uniqueId;
+        updated = true;
+      }
+      if (!rest.phone) {
+        rest.phone = '9861234567';
+        updated = true;
+      }
+      if (updated) {
+        await rest.save();
+        console.log(`Migrated restaurant ${rest.name}: uniqueId=${rest.uniqueId}, phone=${rest.phone}`);
+      }
+    }
+
+    console.log('Database seeding completed!');
   } catch (err) {
     console.error('Error seeding database:', err);
   }

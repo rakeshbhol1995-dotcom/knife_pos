@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 
 const restaurantSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true }, // unique slug id, e.g. 'urmi_kitchen'
+  uniqueId: { type: Number, unique: true, sparse: true }, // unique numerical id for support
+  phone: { type: String }, // owner phone number
   name: { type: String, required: true },
   owner: { type: String, required: true },
   cuisine: { type: String, default: 'Multi-Cuisine' },

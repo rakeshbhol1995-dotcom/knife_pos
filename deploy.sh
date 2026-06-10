@@ -55,7 +55,7 @@ echo '🌐 Configuring Nginx reverse proxy routing on port 80...'
 sudo tee /etc/nginx/sites-available/petpooja.conf > /dev/null <<'NGINX'
 server {
     listen 80;
-    server_name _;
+    server_name knifepos.com www.knifepos.com;
 
     # Frontend static files routing
     location / {

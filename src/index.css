@@ -6,6 +6,9 @@
 
 body {
   font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  width: 100%;
 }
 
 /* Custom Scrollbar for a more polished look */
@@ -28,27 +31,58 @@ body {
 }
 
 /* ========================================================================= */
-/* Mobile Responsiveness & Scrolling Overrides for KNIFE POS */
+/* Mobile Responsiveness & Scrolling Overrides for KNIFE POS                 */
 /* ========================================================================= */
 @media (max-width: 768px) {
-  /* 1. Reset root/body settings to allow window scrolling */
-  body, html, #root {
-    overflow: auto !important;
+
+  /* === 1. ROOT ELEMENTS - Allow native window scroll === */
+  html {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
     height: auto !important;
-    min-height: 100vh;
   }
 
-  /* 2. POS Workspace containers */
+  body {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    min-height: 100dvh;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #root {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    height: auto !important;
+    min-height: 100dvh;
+  }
+
+  /* === 2. LANDING PAGE — remove overflow-hidden === */
+  .landing-page-root {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    min-height: 100dvh !important;
+  }
+
+  /* === 3. ADMIN PORTAL — allow native scroll === */
+  .admin-portal-root {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    min-height: 100dvh !important;
+    padding-bottom: 2rem !important;
+  }
+
+  /* === 4. POS WORKSPACE CONTAINERS === */
   .pos-workspace-root {
     flex-direction: column !important;
     height: auto !important;
-    min-height: 100vh;
+    min-height: 100dvh !important;
     overflow: visible !important;
   }
 
   .pos-workspace-main {
     height: auto !important;
-    min-height: 100vh;
+    min-height: 100dvh !important;
     overflow: visible !important;
   }
 
@@ -57,17 +91,18 @@ body {
     overflow: visible !important;
   }
 
-  /* 3. Table Map View overrides */
+  /* === 5. TABLE MAP VIEW === */
   .pos-table-view-screen {
     height: auto !important;
     overflow: visible !important;
+    padding-bottom: 5rem !important;
   }
 
-  /* 4. POS Billing Panel screen */
+  /* === 6. POS BILLING PANEL === */
   .pos-screen-container {
     flex-direction: column !important;
     height: auto !important;
-    min-height: calc(100vh - 4rem) !important;
+    min-height: calc(100dvh - 4rem) !important;
     overflow: visible !important;
   }
 
@@ -85,7 +120,7 @@ body {
 
   .pos-cart-panel {
     width: 100% !important;
-    height: calc(100vh - 8rem) !important;
+    height: calc(100dvh - 8rem) !important;
     position: fixed !important;
     top: 3.5rem !important;
     bottom: 4rem !important;
@@ -98,16 +133,37 @@ body {
   .pos-cart-items-scroll {
     flex: 1 1 0% !important;
     overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
   }
 
-  /* 5. Sub-screens mobile adjustments */
-  .pos-kds-screen, 
-  .pos-menu-manager, 
-  .pos-reports-screen, 
-  .pos-expenses-screen, 
+  /* === 7. SUB-SCREENS === */
+  .pos-kds-screen,
+  .pos-menu-manager,
+  .pos-reports-screen,
+  .pos-expenses-screen,
   .pos-staff-screen {
     height: auto !important;
     overflow: visible !important;
-    padding-bottom: 5.5rem !important; /* Spacing for bottom navbar */
+    padding-bottom: 5.5rem !important;
+  }
+
+  /* === 8. ADMIN SUPPORT HUB — stack vertically === */
+  .admin-support-hub {
+    height: auto !important;
+    min-height: auto !important;
+    flex-direction: column !important;
+  }
+
+  /* === 9. DETAILS MODAL — safe scrolling === */
+  .details-modal-body {
+    max-height: 70dvh !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  /* === 10. RESTAURANT CARDS — remove fixed height === */
+  .restaurant-card {
+    height: auto !important;
+    min-height: 14rem;
   }
 }
