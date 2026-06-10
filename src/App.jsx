@@ -1713,30 +1713,180 @@ const MenuManager = ({ menuItems, addMenuItem, addMenuItemBatch }) => {
             return;
           }
 
-          let headerRowIdx = 0;
-          for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+          // Dynamic Column Heuristics Analysis
+          const numCols = Math.max(...jsonData.map(row => row ? row.length : 0));
+          const colTypes = Array.from({ length: numCols }, () => ({
+            numericCount: 0,
+            emptyCount: 0,
+            textCount: 0,
+            vegNonVegCount: 0,
+            uniqueTexts: new Set(),
+            allVals: []
+          }));
+
+          jsonData.forEach(row => {
+            if (!row) return;
+            for (let c = 0; c < numCols; c++) {
+              const val = row[c];
+              if (val === undefined || val === null || String(val).trim() === '') {
+                colTypes[c].emptyCount++;
+                continue;
+              }
+              const strVal = String(val).trim();
+              const lowerVal = strVal.toLowerCase();
+              colTypes[c].allVals.push(val);
+
+              if (['veg', 'non-veg', 'nonveg', 'non veg', 'egg', 'v', 'nv', 'vegan'].includes(lowerVal)) {
+                colTypes[c].vegNonVegCount++;
+              }
+
+              const num = Number(strVal.replace(/[^0-9\.]/g, ''));
+              if (!isNaN(num) && num > 0) {
+                colTypes[c].numericCount++;
+              } else {
+                colTypes[c].textCount++;
+                if (strVal.length > 2) {
+                  colTypes[c].uniqueTexts.add(strVal);
+                }
+              }
+            }
+          });
+
+          let nameIdx = -1;
+          let priceIdx = -1;
+          let catIdx = -1;
+          let typeIdx = -1;
+
+          // Try to locate columns by header names first
+          let headerRowIdx = -1;
+          for (let i = 0; i < Math.min(10, jsonData.length); i++) {
             const row = jsonData[i] || [];
-            if (row.some(cell => typeof cell === 'string' && (cell.toLowerCase().includes('name') || cell.toLowerCase().includes('item')))) {
+            const hasHeader = row.some(cell => {
+              if (typeof cell !== 'string') return false;
+              const c = cell.toLowerCase().trim();
+              return c.includes('name') || c.includes('item') || c.includes('title') || c.includes('price') || c.includes('rate') || c.includes('cost') || c === 'rs' || c === 'amount';
+            });
+            if (hasHeader) {
               headerRowIdx = i;
               break;
             }
           }
 
-          const headers = (jsonData[headerRowIdx] || []).map(h => String(h || '').trim().toLowerCase());
-          const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('item') || h.includes('title')) !== -1 ? headers.findIndex(h => h.includes('name') || h.includes('item') || h.includes('title')) : 0;
-          const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('cost')) !== -1 ? headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('cost')) : 1;
-          const catIdx = headers.findIndex(h => h.includes('category') || h.includes('cat') || h.includes('group')) !== -1 ? headers.findIndex(h => h.includes('category') || h.includes('cat') || h.includes('group')) : 2;
-          const typeIdx = headers.findIndex(h => h.includes('veg') || h.includes('non') || h.includes('diet') || h.includes('type')) !== -1 ? headers.findIndex(h => h.includes('veg') || h.includes('non') || h.includes('diet') || h.includes('type')) : -1;
+          if (headerRowIdx !== -1) {
+            const headers = (jsonData[headerRowIdx] || []).map(h => String(h || '').trim().toLowerCase());
+            nameIdx = headers.findIndex(h => h.includes('name') || h.includes('item') || h.includes('title') || h === 'menu');
+            priceIdx = headers.findIndex(h => h.includes('price') || h.includes('rate') || h.includes('cost') || h === 'rs' || h === 'amount');
+            catIdx = headers.findIndex(h => h.includes('category') || h.includes('cat') || h.includes('group') || h.includes('section'));
+            typeIdx = headers.findIndex(h => h.includes('veg') || h.includes('non') || h.includes('diet') || h.includes('type') || h.includes('marker'));
+          }
+
+          // Fallback to advanced heuristics if headers not found or ambiguous
+          if (nameIdx === -1 || priceIdx === -1) {
+            let bestPriceIdx = -1;
+            let highestAvgPrice = 0;
+            for (let c = 0; c < numCols; c++) {
+              const col = colTypes[c];
+              if (col.numericCount > 0) {
+                const nums = col.allVals.map(v => Number(String(v).replace(/[^0-9\.]/g, ''))).filter(n => !isNaN(n));
+                const avg = nums.reduce((sum, val) => sum + val, 0) / (nums.length || 1);
+                
+                let isSerial = false;
+                if (nums.length > 5) {
+                  let matchesSerial = 0;
+                  for (let idx = 1; idx < Math.min(10, nums.length); idx++) {
+                    if (nums[idx] === nums[idx - 1] + 1) matchesSerial++;
+                  }
+                  if (matchesSerial > 3) isSerial = true;
+                }
+
+                if (!isSerial && avg > highestAvgPrice) {
+                  highestAvgPrice = avg;
+                  bestPriceIdx = c;
+                }
+              }
+            }
+            priceIdx = bestPriceIdx !== -1 ? bestPriceIdx : 1;
+
+            let bestNameIdx = -1;
+            let highestUniqueCount = -1;
+            for (let c = 0; c < numCols; c++) {
+              if (c === priceIdx) continue;
+              const col = colTypes[c];
+              if (col.textCount > 0) {
+                if (col.uniqueTexts.size > highestUniqueCount) {
+                  highestUniqueCount = col.uniqueTexts.size;
+                  bestNameIdx = c;
+                }
+              }
+            }
+            nameIdx = bestNameIdx !== -1 ? bestNameIdx : 0;
+
+            let bestCatIdx = -1;
+            for (let c = 0; c < numCols; c++) {
+              if (c === priceIdx || c === nameIdx) continue;
+              const col = colTypes[c];
+              const uniqueCount = col.uniqueTexts.size;
+              if (uniqueCount >= 1 && uniqueCount < 50) {
+                bestCatIdx = c;
+                break;
+              }
+            }
+            if (bestCatIdx !== -1) catIdx = bestCatIdx;
+
+            let bestTypeIdx = -1;
+            let maxTypeCount = 0;
+            for (let c = 0; c < numCols; c++) {
+              if (colTypes[c].vegNonVegCount > maxTypeCount) {
+                maxTypeCount = colTypes[c].vegNonVegCount;
+                bestTypeIdx = c;
+              }
+            }
+            if (maxTypeCount > 2) {
+              typeIdx = bestTypeIdx;
+            }
+          }
+
+          // Ensure safety fallbacks
+          if (nameIdx === -1) nameIdx = 0;
+          if (priceIdx === -1) priceIdx = 1;
 
           const items = [];
-          for (let i = headerRowIdx + 1; i < jsonData.length; i++) {
-            const row = jsonData[i];
-            if (!row || row.length === 0 || !row[nameIdx]) continue;
+          let currentCategory = 'Other';
 
-            const name = String(row[nameIdx]).trim();
-            const price = parseFloat(row[priceIdx]) || 0;
-            let category = row[catIdx] ? String(row[catIdx]).trim() : 'Other';
+          for (let i = (headerRowIdx !== -1 ? headerRowIdx + 1 : 0); i < jsonData.length; i++) {
+            const row = jsonData[i];
+            if (!row || row.length === 0) continue;
+
+            const rawName = row[nameIdx];
+            if (rawName === undefined || rawName === null) continue;
             
+            const nameStr = String(rawName).trim();
+            if (!nameStr) continue;
+
+            const lowerName = nameStr.toLowerCase();
+            if (lowerName === 'item name' || lowerName === 'menu item' || lowerName === 'particulars' || lowerName === 'product' || lowerName === 'name' || lowerName === 'sr.no' || lowerName === 'sl' || lowerName === 's.no') {
+              continue;
+            }
+
+            const rawPrice = row[priceIdx];
+            const priceVal = parseFloat(String(rawPrice || '').replace(/[^0-9\.]/g, ''));
+
+            if (isNaN(priceVal) || priceVal <= 0) {
+              // Row with text but no price is highly likely a category heading!
+              if (nameStr.length > 2 && nameStr.length < 50 && !/\d/.test(nameStr)) {
+                if (!lowerName.includes('total') && !lowerName.includes('gst') && !lowerName.includes('tax')) {
+                  currentCategory = nameStr.replace(/[:\-]/g, '').trim();
+                }
+              }
+              continue;
+            }
+
+            let itemCategory = currentCategory;
+            if (catIdx !== -1 && row[catIdx]) {
+              const catVal = String(row[catIdx]).trim();
+              if (catVal && !/\d/.test(catVal)) itemCategory = catVal;
+            }
+
             let type = 'Veg';
             if (typeIdx !== -1 && row[typeIdx]) {
               const val = String(row[typeIdx]).toLowerCase();
@@ -1744,13 +1894,18 @@ const MenuManager = ({ menuItems, addMenuItem, addMenuItemBatch }) => {
                 type = 'Non-Veg';
               }
             } else {
-              const nameLower = name.toLowerCase();
-              if (nameLower.includes('chicken') || nameLower.includes('mutton') || nameLower.includes('fish') || nameLower.includes('egg') || nameLower.includes('prawn') || nameLower.includes('crab') || nameLower.includes('paya') || nameLower.includes('meat') || nameLower.includes('non-veg') || nameLower.includes('non veg')) {
+              const nameLower = nameStr.toLowerCase();
+              if (nameLower.includes('chicken') || nameLower.includes('mutton') || nameLower.includes('fish') || nameLower.includes('egg') || nameLower.includes('prawn') || nameLower.includes('crab') || nameLower.includes('paya') || nameLower.includes('meat') || nameLower.includes('non-veg') || nameLower.includes('non veg') || currentCategory.toLowerCase().includes('non-veg') || currentCategory.toLowerCase().includes('non veg')) {
                 type = 'Non-Veg';
               }
             }
 
-            items.push({ name, price, category, type });
+            items.push({
+              name: nameStr,
+              price: priceVal,
+              category: itemCategory,
+              type: type
+            });
           }
 
           setParsedItems(items);
@@ -2088,7 +2243,6 @@ const MenuManager = ({ menuItems, addMenuItem, addMenuItemBatch }) => {
                 {menuItems.map(item => (
                   <tr key={item.id} className="hover:bg-slate-50 transition-colors">
                     <td className="p-4 flex items-center gap-3">
-                      <img src={item.image || getFoodImage(item.category, item.name)} className="w-10 h-10 rounded object-cover shadow-xs border border-slate-200" />
                       <span className="font-extrabold text-slate-800 text-sm">{item.name}</span>
                     </td>
                     <td className="p-4 text-xs font-extrabold text-slate-400 uppercase tracking-wide">{item.category}</td>
