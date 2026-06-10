@@ -951,18 +951,6 @@ const TableViewScreen = ({
           </button>
           
           <button 
-            onClick={() => onQuickAction('Delivery')}
-            className="bg-[#d92121] hover:bg-[#b91c1c] text-white font-extrabold px-4 py-2 rounded-lg text-xs tracking-wider transition-all shadow-md uppercase cursor-pointer"
-          >
-            Delivery
-          </button>
-          <button 
-            onClick={() => onQuickAction('Pick Up')}
-            className="bg-[#d92121] hover:bg-[#b91c1c] text-white font-extrabold px-4 py-2 rounded-lg text-xs tracking-wider transition-all shadow-md uppercase cursor-pointer"
-          >
-            Pick Up
-          </button>
-          <button 
             onClick={() => onQuickAction('add_table')}
             className="bg-[#d92121] hover:bg-[#b91c1c] text-white font-extrabold px-4 py-2 rounded-lg text-xs tracking-wider transition-all shadow-md uppercase cursor-pointer"
           >
@@ -5882,7 +5870,7 @@ const LandingPage = ({ onEnterLogin }) => {
               <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 block">Developed & Managed By</span>
               <div className="inline-flex items-center gap-3 bg-slate-900/40 border border-slate-800/80 px-4.5 py-2.5 rounded-2xl shadow-inner backdrop-blur-md">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-xs font-bold text-white tracking-wide">cloudedge.tech</span>
+                <a href="https://cloudedge.tech" target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-white tracking-wide hover:underline cursor-pointer">cloudedge.tech</a>
               </div>
               <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
                 📍 OMP Cuttack, Odisha
@@ -5971,7 +5959,7 @@ const LandingPage = ({ onEnterLogin }) => {
       {/* Footer */}
       <footer className="max-w-6xl mx-auto px-4 py-8 border-t border-slate-950 text-center text-[10px] text-slate-500 font-semibold relative z-10 flex flex-col sm:flex-row justify-between items-center gap-3">
         <div>
-          © 2026 KNIFE POS. All Rights Reserved. Developed by <span className="text-rose-500 font-bold">cloudedge.tech</span>
+          © 2026 KNIFE POS. All Rights Reserved. Developed by <a href="https://cloudedge.tech" target="_blank" rel="noopener noreferrer" className="text-rose-500 font-bold hover:underline cursor-pointer">cloudedge.tech</a>
         </div>
         <div className="flex gap-4">
           <button onClick={() => setShowTerms(true)} className="hover:text-slate-400 transition-colors cursor-pointer">Terms of Service</button>
