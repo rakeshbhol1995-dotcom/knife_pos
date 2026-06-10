@@ -51,11 +51,24 @@ pm2 delete petpooja-server || true
 pm2 start server.js --name "petpooja-server"
 pm2 save
 
-echo '🌐 Configuring Nginx reverse proxy routing on port 80...'
+echo '🌐 Configuring Nginx reverse proxy routing with SSL (HTTPS)...'
 sudo tee /etc/nginx/sites-available/petpooja.conf > /dev/null <<'NGINX'
 server {
     listen 80;
     server_name knifepos.com www.knifepos.com;
+    return 301 https://knifepos.com$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name knifepos.com www.knifepos.com;
+
+    ssl_certificate /etc/letsencrypt/live/knifepos.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/knifepos.com/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256';
 
     # Frontend static files routing
     location / {
